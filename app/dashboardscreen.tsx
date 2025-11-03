@@ -226,9 +226,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   headerTextBox: { flex: 1 },
-  headerGreeting: { color: "#fff", fontSize: 22, fontWeight: "700" },
+  headerGreeting: { color: "#fff", fontSize: 24, fontWeight: "700" },
   headerSubtitle: { color: "#E3F2FD", fontSize: 14, marginTop: 4 },
-  headerLogo: { width: 150, height: 70 },
+  headerLogo: { width: 190, height: 100, marginRight: -35, marginLeft: -21 },
 
   newsCard: {
     width: width * 0.7,
