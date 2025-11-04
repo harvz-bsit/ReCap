@@ -1,37 +1,39 @@
-import { exec } from 'child_process';
-import cors from 'cors';
-import express from 'express';
-import fs from 'fs';
-import multer from 'multer';
+import bodyParser from "body-parser";
+import dotenv from "dotenv";
+import express from "express";
+import fetch from "node-fetch";
 
+dotenv.config();
 const app = express();
-app.use(cors());
+app.use(bodyParser.json({ limit: "50mb" }));
 
-const upload = multer({ dest: 'uploads/' });
+app.post("/transcribe", async (req, res) => {
+  const { audioBase64 } = req.body;
 
-app.post('/transcribe', upload.single('file'), async (req, res) => {
-    const filePath = req.file.path;
+  try {
+    const response = await fetch(
+      "https://speech.googleapis.com/v1/speech:recognize?key=" + process.env.GOOGLE_API_KEY,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: {
+            encoding: "LINEAR16",
+            sampleRateHertz: 44100,
+            languageCode: "en-US",
+          },
+          audio: { content: audioBase64 },
+        }),
+      }
+    );
 
-    console.log('Received audio:', filePath);
-    try {
-        exec(`whisper ${filePath} --model base --language en --output_format json`, (error, stdout, stderr) => {
-            if (error) {
-                console.error('Whisper error:', stderr);
-                return res.status(500).json({ error: 'Whisper failed.' });
-            }
-
-            const outputFile = `${filePath}.json`;
-            if (fs.existsSync(outputFile)) {
-                const result = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-                res.json({ text: result.text });
-            } else {
-                res.status(500).json({ error: 'No transcription output found.' });
-            }
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
+    const data = await response.json();
+    const transcript = data.results?.map(r => r.alternatives[0].transcript).join(" ") || "";
+    res.json({ transcript });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Transcription failed" });
+  }
 });
 
-app.listen(5000, () => console.log('Whisper server running on port 5000'));
+app.listen(3000, () => console.log("Server running on port 3000"));
