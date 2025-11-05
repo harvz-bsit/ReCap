@@ -9,7 +9,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { teams, TeamTask } from "../data/mockData";
+import { teams, TeamTask } from "../../data/mockData";
 
 const LOGO_SOURCE = require("../images/recap-logo.png");
 const { width } = Dimensions.get("window");
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   headerTextBox: { flex: 1 },
   headerGreeting: { color: "#fff", fontSize: 24, fontWeight: "700" },
   headerSubtitle: { color: "#E3F2FD", fontSize: 14, marginTop: 4 },
-  headerLogo: { width: 190, height: 100, marginRight: -35, marginLeft: -21 },
+  headerLogo: { width: 130, height: 80, marginRight: -10, marginLeft: -21 },
 
   newsCard: {
     width: width * 0.7,

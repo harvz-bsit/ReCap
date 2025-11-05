@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useLayoutEffect } from "react";
 import {
   View,
   Text,
@@ -11,35 +11,59 @@ import {
   Linking,
   Alert,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
-import { teams, Team, Task, Meeting } from "../../../data/mockData";
+// Assuming you have this file structure and types defined:
+// import { teams, Team, Task, Meeting } from "../../../data/mockData";
+import { teams } from "../../../data/mockData"; // Import only 'teams' for simplicity
 
-// --- Helper function for date formatting (Existing Implementation) ---
+// --- Define Types (assuming minimal structure for compilation) ---
+interface Team {
+  id: string;
+  name: string;
+  tasks: Task[];
+  meetings: Meeting[];
+  members: { name: string; role: string; department: string }[];
+}
+
+interface Task {
+  id: string;
+  title: string;
+  deadline: string;
+  status: "Pending" | "Completed";
+}
+
+interface Meeting {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+}
+
+// --- Helper function for date formatting ---
 const formatDate = (dateStr: string): string => {
-  // dateStr is expected to be in "YYYY-MM-DD" format from mockData
   try {
-    const dateParts = dateStr.split('-');
+    const dateParts = dateStr.split("-");
     if (dateParts.length !== 3) return dateStr;
-    
-    // Create a Date object (using UTC to prevent timezone shifts from altering the date)
-    const date = new Date(Date.UTC(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2])));
-
-    // Format the date to "Month Day, Year" (e.g., "Dec 25, 2024")
-    return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric', 
-        timeZone: 'UTC' 
+    const date = new Date(
+      Date.UTC(
+        parseInt(dateParts[0]),
+        parseInt(dateParts[1]) - 1,
+        parseInt(dateParts[2])
+      )
+    );
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
     });
-  } catch (error) {
-    console.error("Date formatting error:", error);
+  } catch {
     return dateStr;
   }
 };
-// ----------------------------------------------------------------
 
-// --- Reusable Theming Hooks (simplified for example) ---
+// --- Theme Helper ---
 const getTheme = (isDark: boolean) => ({
   bg: isDark ? "#121212" : "#F4F8FB",
   card: isDark ? "#1E1E1E" : "#FFFFFF",
@@ -50,38 +74,33 @@ const getTheme = (isDark: boolean) => ({
   lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
 });
 
-// =================================================================
-// 🧱 Extracted Component Structure
-// =================================================================
-
-// 1. StatCard Component
-const StatCard = ({ icon, color, number, label, theme }: { icon: string, color: string, number: number, label: string, theme: any }) => (
+// --- Stat Card ---
+const StatCard = ({ icon, color, number, label, theme }: any) => (
   <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
-    <MaterialIcons name={icon as "pending-actions" | "check-circle"} size={24} color={color} />
-    <Text style={[styles.statNumber, { color: theme.text }]}>
-      {number}
-    </Text>
-    <Text style={[styles.statLabel, { color: theme.secondary }]}>
-      {label}
-    </Text>
+    <MaterialIcons name={icon} size={24} color={color} />
+    <Text style={[styles.statNumber, { color: theme.text }]}>{number}</Text>
+    <Text style={[styles.statLabel, { color: theme.secondary }]}>{label}</Text>
   </View>
 );
 
-// 2. TaskItem Component
-const TaskItem = ({ task, theme, toggleTaskStatus }: { task: Task, theme: any, toggleTaskStatus: (id: string) => void }) => {
+// --- Task Item ---
+const TaskItem = ({ task, theme, toggleTaskStatus }: any) => {
   const isCompleted = task.status === "Completed";
   const cardStyle = { backgroundColor: isCompleted ? theme.lightCard : theme.card };
-  const textStyle = { color: isCompleted ? "#16A34A" : theme.text, textDecorationLine: isCompleted ? "line-through" : "none" as const };
+  const textStyle = {
+    color: isCompleted ? "#16A34A" : theme.text,
+    textDecorationLine: isCompleted ? "line-through" : "none" as const,
+  };
   const iconName = isCompleted ? "refresh-outline" : "checkbox-outline";
   const iconColor = isCompleted ? "#16A34A" : theme.blue;
-  const deadlineText = isCompleted ? `Completed: ${formatDate(task.deadline)}` : `Deadline: ${formatDate(task.deadline)}`;
+  const deadlineText = isCompleted
+    ? `Completed: ${formatDate(task.deadline)}`
+    : `Deadline: ${formatDate(task.deadline)}`;
 
   return (
     <View key={task.id} style={[styles.taskCard, cardStyle]}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.taskTitle, textStyle]}>
-          {task.title}
-        </Text>
+        <Text style={[styles.taskTitle, textStyle]}>{task.title}</Text>
         <Text style={[styles.taskDeadline, { color: theme.secondary }]}>
           {deadlineText}
         </Text>
@@ -93,17 +112,13 @@ const TaskItem = ({ task, theme, toggleTaskStatus }: { task: Task, theme: any, t
   );
 };
 
-// 3. MeetingItem Component
-const MeetingItem = ({ meeting, theme, getMeetingStatus }: { meeting: Meeting, theme: any, getMeetingStatus: (date: string, time: string) => string }) => {
+// --- Meeting Item ---
+const MeetingItem = ({ meeting, theme, getMeetingStatus }: any) => {
   const status = getMeetingStatus(meeting.date, meeting.time);
   const statusColor = status === "Missed" ? "#E53935" : "#16A34A";
   const formattedDate = formatDate(meeting.date);
-
   return (
-    <View
-      key={meeting.id}
-      style={[styles.meetingCard, { backgroundColor: theme.card }]}
-    >
+    <View key={meeting.id} style={[styles.meetingCard, { backgroundColor: theme.card }]}>
       <FontAwesome5
         name={status === "Missed" ? "calendar-times" : "calendar-alt"}
         size={18}
@@ -116,9 +131,7 @@ const MeetingItem = ({ meeting, theme, getMeetingStatus }: { meeting: Meeting, t
         <Text style={[styles.meetingInfo, { color: theme.secondary }]}>
           {formattedDate} • {meeting.time}
         </Text>
-        <Text
-          style={{ color: statusColor, fontWeight: "600", fontSize: 13 }}
-        >
+        <Text style={{ color: statusColor, fontWeight: "600", fontSize: 13 }}>
           {status}
         </Text>
       </View>
@@ -126,43 +139,47 @@ const MeetingItem = ({ meeting, theme, getMeetingStatus }: { meeting: Meeting, t
   );
 };
 
-// =================================================================
-// 🚀 Main TeamDetailsScreen Component
-// =================================================================
-
+// --- Main Screen ---
 export default function TeamDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const navigation = useNavigation();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
 
-  const [showMembers, setShowMembers] = useState(false);
-  const [taskList, setTaskList] = useState(() => {
-    const team = teams.find((t) => t.id === id);
-    return team ? [...team.tasks] : [];
-  });
-
-  const theme = getTheme(isDark);
-
   const team: Team | undefined = teams.find((t) => t.id === id);
+
+  // ✅ MODIFIED: Sets the native navigation bar title to the team name.
+  useLayoutEffect(() => {
+    if (team?.name) {
+      navigation.setOptions({
+        title: team.name,
+      });
+    }
+  }, [navigation, team]);
+
+  const [showMembers, setShowMembers] = useState(false);
+  const [taskList, setTaskList] = useState(team ? [...team.tasks] : []);
+  const theme = getTheme(isDark);
 
   if (!team) {
     return (
-      <View style={styles.center}>
-        <Text>Team not found.</Text>
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <Text style={{ color: theme.text }}>Team not found.</Text>
       </View>
     );
   }
 
   const now = new Date();
 
-  // Logic functions
   const getMeetingStatus = (meetingDateStr: string, meetingTimeStr: string) => {
+    // Note: Assuming date format is YYYY-MM-DD and time is HH:MM (24h)
     const meetingDate = new Date(`${meetingDateStr}T${meetingTimeStr}:00`);
     return meetingDate < now ? "Missed" : "Upcoming";
   };
 
   const handleExport = () => {
+    // Open Google Calendar or a link to export data
     Linking.openURL("https://calendar.google.com/calendar/u/0/r");
   };
 
@@ -170,10 +187,7 @@ export default function TeamDetailsScreen() {
     setTaskList((prev) =>
       prev.map((task) =>
         task.id === taskId
-          ? {
-              ...task,
-              status: task.status === "Completed" ? "Pending" : "Completed",
-            }
+          ? { ...task, status: task.status === "Completed" ? "Pending" : "Completed" }
           : task
       )
     );
@@ -186,8 +200,9 @@ export default function TeamDetailsScreen() {
         text: "Leave",
         onPress: () => {
           setShowMembers(false);
+          // In a real app, you would remove the user from the team data here
           Alert.alert("Success", `You have left ${team.name}.`);
-          router.push("/teams");
+          router.push("/teams"); // Navigate back to the teams list
         },
         style: "destructive",
       },
@@ -201,69 +216,46 @@ export default function TeamDetailsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity
-          onPress={() => router.push("/teams")}
-          style={styles.backButton}
-        >
+        <TouchableOpacity onPress={() => router.push("/teams")} style={styles.backButton}>
           <Ionicons name="arrow-back" size={22} color={theme.blue} />
           <Text style={[styles.backText, { color: theme.blue }]}>Back</Text>
         </TouchableOpacity>
 
+        {/* ✅ MODIFIED: Displays the specific team name */}
         <Text style={[styles.header, { color: theme.text }]}>{team.name}</Text>
 
-        {/* Info (Members) */}
-        <TouchableOpacity
-          onPress={() => setShowMembers(true)}
-          style={styles.iconButton}
-        >
-          <Ionicons
-            name="information-circle-outline"
-            size={26}
-            color={theme.blue}
-          />
+        <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
+          <Ionicons name="information-circle-outline" size={26} color={theme.blue} />
         </TouchableOpacity>
       </View>
-      
-      <ScrollView showsVerticalScrollIndicator={false}>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
         {/* Stats */}
         <View style={styles.statsContainer}>
-          <StatCard
-            icon="pending-actions"
-            color="#F59E0B"
-            number={pendingTasks.length}
-            label="Pending"
-            theme={theme}
-          />
-          <StatCard
-            icon="check-circle"
-            color="#16A34A"
-            number={completedTasks.length}
-            label="Completed"
-            theme={theme}
-          />
+          <StatCard icon="pending-actions" color="#F59E0B" number={pendingTasks.length} label="Pending" theme={theme} />
+          <StatCard icon="check-circle" color="#16A34A" number={completedTasks.length} label="Completed" theme={theme} />
           <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
             <FontAwesome5 name="calendar-alt" size={22} color={theme.blue} />
-            <Text style={[styles.statNumber, { color: theme.text }]}>
-              {team.meetings.length}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.secondary }]}>
-              Meetings
-            </Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{team.meetings.length}</Text>
+            <Text style={[styles.statLabel, { color: theme.secondary }]}>Meetings</Text>
           </View>
         </View>
 
         {/* Tasks */}
         <Text style={[styles.subHeader, { color: theme.text }]}>🗒️ Tasks</Text>
-        {pendingTasks.map((task) => (
-          <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
-        ))}
+        {pendingTasks.length > 0 ? (
+          pendingTasks.map((task) => (
+            <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
+          ))
+        ) : (
+          <Text style={[styles.noItemsText, { color: theme.secondary }]}>No pending tasks!</Text>
+        )}
 
         {/* Completed Tasks */}
         {completedTasks.length > 0 && (
           <>
-            <Text style={[styles.subHeader, { color: theme.text }]}>
-              ✅ Completed Tasks
-            </Text>
+            <Text style={[styles.subHeader, { color: theme.text }]}>✅ Completed Tasks</Text>
             {completedTasks.map((task) => (
               <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
             ))}
@@ -272,14 +264,19 @@ export default function TeamDetailsScreen() {
 
         {/* Meetings */}
         <Text style={[styles.subHeader, { color: theme.text }]}>📅 Meetings</Text>
-        {team.meetings.map((meeting) => (
-          <MeetingItem 
-            key={meeting.id} 
-            meeting={meeting} 
-            theme={theme} 
-            getMeetingStatus={getMeetingStatus} 
-          />
-        ))}
+        {team.meetings.length > 0 ? (
+            team.meetings.map((meeting) => (
+            <MeetingItem
+              key={meeting.id}
+              meeting={meeting}
+              theme={theme}
+              getMeetingStatus={getMeetingStatus}
+            />
+          ))
+        ) : (
+          <Text style={[styles.noItemsText, { color: theme.secondary }]}>No meetings scheduled.</Text>
+        )}
+
 
         {/* Export */}
         <TouchableOpacity
@@ -289,70 +286,40 @@ export default function TeamDetailsScreen() {
           <Ionicons name="cloud-upload-outline" size={20} color="#fff" />
           <Text style={styles.exportText}>Export to Google Calendar</Text>
         </TouchableOpacity>
+        <View style={{ height: 30 }} />
       </ScrollView>
 
       {/* Members Modal */}
-      <Modal
-        visible={showMembers}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowMembers(false)}
-      >
+      <Modal visible={showMembers} animationType="fade" transparent onRequestClose={() => setShowMembers(false)}>
         <View style={styles.modalOverlayCenter}>
-          <View
-            style={[styles.modalContentCenter, { backgroundColor: theme.card }]}
-          >
+          <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                Team Members
-              </Text>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Team Members</Text>
               <TouchableOpacity onPress={() => setShowMembers(false)}>
                 <Ionicons name="close-circle" size={26} color={theme.blue} />
               </TouchableOpacity>
             </View>
-            <ScrollView>
+            <ScrollView style={{ maxHeight: 300 }}>
               {team.members.map((member, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.memberCard,
-                    { backgroundColor: theme.lightCard },
-                  ]}
-                >
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={30}
-                    color={theme.blue}
-                  />
+                <View key={index} style={[styles.memberCard, { backgroundColor: theme.lightCard }]}>
+                  <Ionicons name="person-circle-outline" size={30} color={theme.blue} />
                   <View>
-                    <Text style={[styles.memberName, { color: theme.text }]}>
-                      {member.name}
-                    </Text>
-                    <Text
-                      style={[styles.memberRole, { color: theme.secondary }]}
-                    >
+                    <Text style={[styles.memberName, { color: theme.text }]}>{member.name}</Text>
+                    <Text style={[styles.memberRole, { color: theme.secondary }]}>
                       {member.role} • {member.department}
                     </Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
-
             <TouchableOpacity
               style={[
                 styles.leaveTeamButton,
-                {
-                  borderColor: theme.secondary,
-                  backgroundColor: isDark ? "#333" : "#FEE2E2",
-                },
+                { borderColor: theme.secondary, backgroundColor: isDark ? "#333" : "#FEE2E2" },
               ]}
               onPress={handleLeaveTeam}
             >
-              <Ionicons
-                name="exit-outline"
-                size={20}
-                color={isDark ? "#EF4444" : "#DC2626"}
-              />
+              <Ionicons name="exit-outline" size={20} color={isDark ? "#EF4444" : "#DC2626"} />
               <Text
                 style={[
                   styles.leaveTeamButtonText,
@@ -369,13 +336,10 @@ export default function TeamDetailsScreen() {
   );
 }
 
-// =================================================================
-// 🎨 Stylesheet
-// =================================================================
-
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingBottom: 20 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -384,7 +348,7 @@ const styles = StyleSheet.create({
   },
   backButton: { flexDirection: "row", alignItems: "center", gap: 6 },
   backText: { fontWeight: "600" },
-  header: { fontSize: 22, fontWeight: "700", textAlign: "center", flex: 1 },
+  header: { fontSize: 22, fontWeight: "700", textAlign: "center", flex: 1 }, // Added flex: 1 for centering
   iconButton: { padding: 4 },
   subHeader: { fontSize: 18, fontWeight: "700", marginTop: 20, marginBottom: 10 },
   statsContainer: {
@@ -472,4 +436,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 8,
   },
+  noItemsText: {
+    textAlign: 'center',
+    paddingVertical: 10,
+    fontStyle: 'italic',
+  }
 });
