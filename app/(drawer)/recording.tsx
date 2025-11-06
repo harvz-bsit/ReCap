@@ -1,16 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    useColorScheme,
-    View
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useColorScheme,
+  View
 } from 'react-native';
 
 export default function RecordScreen() {
@@ -34,6 +35,8 @@ export default function RecordScreen() {
     secondary: isDark ? '#B0BEC5' : '#444',
     border: isDark ? '#333' : '#E0E0E0',
   };
+
+  const OPENAI_API_KEY = Constants.manifest?.extra?.expo_open_ai;
 
   useEffect(() => {
     (async () => {
@@ -117,36 +120,35 @@ export default function RecordScreen() {
         return;
       }
 
-      // Save file (optional) – using FileSystem
-      const folder = (FileSystem as any).documentDirectory + 'recordings/';
-      await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+      // Save file
+      const folder = ((FileSystem as any).documentDirectory as string) + 'recordings/';
+      await (FileSystem as any).makeDirectoryAsync(folder, { intermediates: true });
       const fileName = `recording_${Date.now()}.m4a`;
       const newPath = folder + fileName;
       await FileSystem.moveAsync({ from: uri, to: newPath });
 
-      // Send to Gemini API for transcription
+      // Read file as base64
+      const base64Audio = await FileSystem.readAsStringAsync(newPath, { encoding: 'base64' });
+
+      // Send to OpenAI Whisper
       const formData = new FormData();
       formData.append('file', {
         uri: newPath,
         name: fileName,
         type: 'audio/m4a',
       } as any);
-      // Example: specify model name or other parameters
-      formData.append('model', 'gemini-audio-1');   // <–– adjust model name
-      // Add any further parameters per Gemini's API spec
-      const GEMINI_API_KEY = 'AIzaSyCgNjmI8DPSvh-ixznuqUMdO0ITpN5RDlE';  // <–– replace with your key
-      const response = await fetch('https://api.generativeai.google/v1beta2/audio:recognize', {
+
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GEMINI_API_KEY}`,
-          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
         },
         body: formData,
       });
 
       const data = await response.json();
-      if (data && data.transcript) {
-        setTranscript(data.transcript);
+      if (data?.text) {
+        setTranscript(data.text);
       } else {
         setTranscript('No transcription received');
       }
