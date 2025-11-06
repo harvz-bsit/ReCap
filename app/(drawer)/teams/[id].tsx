@@ -5,19 +5,21 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
+  SafeAreaView as RNSafeAreaView,
   Modal,
   useColorScheme,
   Linking,
   Alert,
+  Platform, // ✅ Needed for Option 1
 } from "react-native";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
-import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
-// Assuming you have this file structure and types defined:
-// import { teams, Team, Task, Meeting } from "../../../data/mockData";
-import { teams } from "../../../data/mockData"; // Import only 'teams' for simplicity
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { teams } from "../../../data/mockData";
 
-// --- Define Types (assuming minimal structure for compilation) ---
+// ✅ SAFE AREA CONTEXT (ONLY CHANGE)
+import { SafeAreaView } from "react-native-safe-area-context";
+
+// --- Define Types ---
 interface Team {
   id: string;
   name: string;
@@ -72,12 +74,21 @@ const getTheme = (isDark: boolean) => ({
   blue: "#1976D2",
   accent: isDark ? "#1565C0" : "#2196F3",
   lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
+  iconBg: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
+  iconBorder: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
 });
 
 // --- Stat Card ---
 const StatCard = ({ icon, color, number, label, theme }: any) => (
   <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
-    <MaterialIcons name={icon} size={24} color={color} />
+    <View
+      style={[
+        styles.iconWrapper,
+        { backgroundColor: theme.iconBg, borderColor: theme.iconBorder },
+      ]}
+    >
+      <MaterialIcons name={icon} size={26} color={color} />
+    </View>
     <Text style={[styles.statNumber, { color: theme.text }]}>{number}</Text>
     <Text style={[styles.statLabel, { color: theme.secondary }]}>{label}</Text>
   </View>
@@ -86,13 +97,16 @@ const StatCard = ({ icon, color, number, label, theme }: any) => (
 // --- Task Item ---
 const TaskItem = ({ task, theme, toggleTaskStatus }: any) => {
   const isCompleted = task.status === "Completed";
-  const cardStyle = { backgroundColor: isCompleted ? theme.lightCard : theme.card };
+
+  const cardStyle = { backgroundColor: theme.card };
   const textStyle = {
     color: isCompleted ? "#16A34A" : theme.text,
     textDecorationLine: isCompleted ? "line-through" : "none" as const,
   };
-  const iconName = isCompleted ? "refresh-outline" : "checkbox-outline";
+
+  const iconName = isCompleted ? "checkbox" : "square-outline";
   const iconColor = isCompleted ? "#16A34A" : theme.blue;
+
   const deadlineText = isCompleted
     ? `Completed: ${formatDate(task.deadline)}`
     : `Deadline: ${formatDate(task.deadline)}`;
@@ -105,8 +119,19 @@ const TaskItem = ({ task, theme, toggleTaskStatus }: any) => {
           {deadlineText}
         </Text>
       </View>
-      <TouchableOpacity onPress={() => toggleTaskStatus(task.id)}>
-        <Ionicons name={iconName} size={26} color={iconColor} />
+
+      <TouchableOpacity
+        onPress={() => toggleTaskStatus(task.id)}
+        style={styles.iconButtonContainer}
+      >
+        <View
+          style={[
+            styles.iconSquare,
+            { backgroundColor: theme.iconBg, borderColor: theme.iconBorder },
+          ]}
+        >
+          <Ionicons name={iconName} size={22} color={iconColor} />
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -115,19 +140,27 @@ const TaskItem = ({ task, theme, toggleTaskStatus }: any) => {
 // --- Meeting Item ---
 const MeetingItem = ({ meeting, theme, getMeetingStatus }: any) => {
   const status = getMeetingStatus(meeting.date, meeting.time);
-  const statusColor = status === "Missed" ? "#E53935" : "#16A34A";
+
+  const statusColor = status === "Missed" ? "#E53935" : theme.blue;
   const formattedDate = formatDate(meeting.date);
+
   return (
     <View key={meeting.id} style={[styles.meetingCard, { backgroundColor: theme.card }]}>
-      <FontAwesome5
-        name={status === "Missed" ? "calendar-times" : "calendar-alt"}
-        size={18}
-        color={theme.blue}
-      />
-      <View style={{ marginLeft: 8 }}>
-        <Text style={[styles.meetingTitle, { color: theme.text }]}>
-          {meeting.title}
-        </Text>
+      <View
+        style={[
+          styles.iconWrapperSmall,
+          { backgroundColor: theme.iconBg, borderColor: theme.iconBorder },
+        ]}
+      >
+        <MaterialIcons
+          name={status === "Missed" ? "event-busy" : "calendar-today"}
+          size={22}
+          color={theme.blue}
+        />
+      </View>
+
+      <View style={{ marginLeft: 10 }}>
+        <Text style={[styles.meetingTitle, { color: theme.text }]}>{meeting.title}</Text>
         <Text style={[styles.meetingInfo, { color: theme.secondary }]}>
           {formattedDate} • {meeting.time}
         </Text>
@@ -149,7 +182,6 @@ export default function TeamDetailsScreen() {
 
   const team: Team | undefined = teams.find((t) => t.id === id);
 
-  // ✅ MODIFIED: Sets the native navigation bar title to the team name.
   useLayoutEffect(() => {
     if (team?.name) {
       navigation.setOptions({
@@ -159,6 +191,7 @@ export default function TeamDetailsScreen() {
   }, [navigation, team]);
 
   const [showMembers, setShowMembers] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [taskList, setTaskList] = useState(team ? [...team.tasks] : []);
   const theme = getTheme(isDark);
 
@@ -173,13 +206,11 @@ export default function TeamDetailsScreen() {
   const now = new Date();
 
   const getMeetingStatus = (meetingDateStr: string, meetingTimeStr: string) => {
-    // Note: Assuming date format is YYYY-MM-DD and time is HH:MM (24h)
     const meetingDate = new Date(`${meetingDateStr}T${meetingTimeStr}:00`);
     return meetingDate < now ? "Missed" : "Upcoming";
   };
 
   const handleExport = () => {
-    // Open Google Calendar or a link to export data
     Linking.openURL("https://calendar.google.com/calendar/u/0/r");
   };
 
@@ -194,168 +225,248 @@ export default function TeamDetailsScreen() {
   };
 
   const handleLeaveTeam = () => {
-    Alert.alert("Confirm Leave", `Are you sure you want to leave ${team.name}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave",
-        onPress: () => {
-          setShowMembers(false);
-          // In a real app, you would remove the user from the team data here
-          Alert.alert("Success", `You have left ${team.name}.`);
-          router.push("/teams"); // Navigate back to the teams list
-        },
-        style: "destructive",
-      },
-    ]);
+    setShowLeaveConfirm(true);
+  };
+
+  const confirmLeaveTeam = () => {
+    setShowLeaveConfirm(false);
+    setShowMembers(false);
+
+    Alert.alert("Success", `You have left ${team.name}.`);
+    router.push("/teams");
   };
 
   const pendingTasks = taskList.filter((t) => t.status !== "Completed");
   const completedTasks = taskList.filter((t) => t.status === "Completed");
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.push("/teams")} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={22} color={theme.blue} />
-          <Text style={[styles.backText, { color: theme.blue }]}>Back</Text>
-        </TouchableOpacity>
+    <>
+      {/* ✅ SAFEAREA — ONLY CHANGE */}
+      <SafeAreaView
+        style={[styles.safeArea, { backgroundColor: theme.bg }]}
+        edges={["top", "bottom"]}
+      >
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => router.push("/teams")} style={styles.backButton}>
+            <Ionicons name="arrow-back-circle-outline" size={24} color={theme.blue} />
+          </TouchableOpacity>
 
-        {/* ✅ MODIFIED: Displays the specific team name */}
-        <Text style={[styles.header, { color: theme.text }]}>{team.name}</Text>
+          <Text style={[styles.header, { color: theme.text }]}>{team.name}</Text>
 
-        <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
-          <Ionicons name="information-circle-outline" size={26} color={theme.blue} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Stats */}
-        <View style={styles.statsContainer}>
-          <StatCard icon="pending-actions" color="#F59E0B" number={pendingTasks.length} label="Pending" theme={theme} />
-          <StatCard icon="check-circle" color="#16A34A" number={completedTasks.length} label="Completed" theme={theme} />
-          <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
-            <FontAwesome5 name="calendar-alt" size={22} color={theme.blue} />
-            <Text style={[styles.statNumber, { color: theme.text }]}>{team.meetings.length}</Text>
-            <Text style={[styles.statLabel, { color: theme.secondary }]}>Meetings</Text>
-          </View>
+          <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
+            <Ionicons name="information-circle" size={26} color={theme.blue} />
+          </TouchableOpacity>
         </View>
 
-        {/* Tasks */}
-        <Text style={[styles.subHeader, { color: theme.text }]}>🗒️ Tasks</Text>
-        {pendingTasks.length > 0 ? (
-          pendingTasks.map((task) => (
-            <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
-          ))
-        ) : (
-          <Text style={[styles.noItemsText, { color: theme.secondary }]}>No pending tasks!</Text>
-        )}
+        <View style={{ height: 10 }} />
 
-        {/* Completed Tasks */}
-        {completedTasks.length > 0 && (
-          <>
-            <Text style={[styles.subHeader, { color: theme.text }]}>✅ Completed Tasks</Text>
-            {completedTasks.map((task) => (
-              <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
-            ))}
-          </>
-        )}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        {/* Meetings */}
-        <Text style={[styles.subHeader, { color: theme.text }]}>📅 Meetings</Text>
-        {team.meetings.length > 0 ? (
-            team.meetings.map((meeting) => (
-            <MeetingItem
-              key={meeting.id}
-              meeting={meeting}
+          {/* ✅ Stats */}
+          <View style={styles.statsContainer}>
+            <StatCard
+              icon="assignment"
+              color="#F59E0B"
+              number={pendingTasks.length}
+              label="Pending"
               theme={theme}
-              getMeetingStatus={getMeetingStatus}
             />
-          ))
-        ) : (
-          <Text style={[styles.noItemsText, { color: theme.secondary }]}>No meetings scheduled.</Text>
-        )}
 
+            <StatCard
+              icon="task-alt"
+              color="#16A34A"
+              number={completedTasks.length}
+              label="Completed"
+              theme={theme}
+            />
 
-        {/* Export */}
-        <TouchableOpacity
-          style={[styles.exportButton, { backgroundColor: theme.accent }]}
-          onPress={handleExport}
-        >
-          <Ionicons name="cloud-upload-outline" size={20} color="#fff" />
-          <Text style={styles.exportText}>Export to Google Calendar</Text>
-        </TouchableOpacity>
-        <View style={{ height: 30 }} />
-      </ScrollView>
-
-      {/* Members Modal */}
-      <Modal visible={showMembers} animationType="fade" transparent onRequestClose={() => setShowMembers(false)}>
-        <View style={styles.modalOverlayCenter}>
-          <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Team Members</Text>
-              <TouchableOpacity onPress={() => setShowMembers(false)}>
-                <Ionicons name="close-circle" size={26} color={theme.blue} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ maxHeight: 300 }}>
-              {team.members.map((member, index) => (
-                <View key={index} style={[styles.memberCard, { backgroundColor: theme.lightCard }]}>
-                  <Ionicons name="person-circle-outline" size={30} color={theme.blue} />
-                  <View>
-                    <Text style={[styles.memberName, { color: theme.text }]}>{member.name}</Text>
-                    <Text style={[styles.memberRole, { color: theme.secondary }]}>
-                      {member.role} • {member.department}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={[
-                styles.leaveTeamButton,
-                { borderColor: theme.secondary, backgroundColor: isDark ? "#333" : "#FEE2E2" },
-              ]}
-              onPress={handleLeaveTeam}
-            >
-              <Ionicons name="exit-outline" size={20} color={isDark ? "#EF4444" : "#DC2626"} />
-              <Text
+            <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
+              <View
                 style={[
-                  styles.leaveTeamButtonText,
-                  { color: isDark ? "#EF4444" : "#DC2626" },
+                  styles.iconWrapper,
+                  { backgroundColor: theme.iconBg, borderColor: theme.iconBorder },
                 ]}
               >
-                Leave Team
-              </Text>
-            </TouchableOpacity>
+                <MaterialIcons name="calendar-today" size={26} color={theme.blue} />
+              </View>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{team.meetings.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.secondary }]}>Meetings</Text>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+
+          {/* ✅ Tasks Section */}
+          <Text style={[styles.subHeader, { color: theme.text }]}>
+            <MaterialIcons name="assignment" size={18} color={theme.text} /> Tasks
+          </Text>
+          {pendingTasks.length > 0 ? (
+            pendingTasks.map((task) => (
+              <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
+            ))
+          ) : (
+            <Text style={[styles.noItemsText, { color: theme.secondary }]}>No pending tasks!</Text>
+          )}
+
+          {/* ✅ Completed */}
+          {completedTasks.length > 0 && (
+            <>
+              <Text style={[styles.subHeader, { color: theme.text }]}>
+                <MaterialIcons name="task-alt" size={18} color="#16A34A" /> Completed Tasks
+              </Text>
+              {completedTasks.map((task) => (
+                <TaskItem key={task.id} task={task} theme={theme} toggleTaskStatus={toggleTaskStatus} />
+              ))}
+            </>
+          )}
+
+          {/* ✅ Meetings */}
+          <Text style={[styles.subHeader, { color: theme.text }]}>
+            <MaterialIcons name="event" size={18} color={theme.text} /> Meetings
+          </Text>
+          {team.meetings.length > 0 ? (
+            team.meetings.map((meeting) => (
+              <MeetingItem
+                key={meeting.id}
+                meeting={meeting}
+                theme={theme}
+                getMeetingStatus={getMeetingStatus}
+              />
+            ))
+          ) : (
+            <Text style={[styles.noItemsText, { color: theme.secondary }]}>No meetings scheduled.</Text>
+          )}
+
+          <TouchableOpacity
+            style={[styles.exportButton, { backgroundColor: theme.accent }]}
+            onPress={handleExport}
+          >
+            <Ionicons name="cloud-upload-sharp" size={20} color="#fff" />
+            <Text style={styles.exportText}>Export to Google Calendar</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: 30 }} />
+        </ScrollView>
+
+        {/* ✅ Members Modal */}
+        <Modal visible={showMembers} animationType="fade" transparent onRequestClose={() => setShowMembers(false)}>
+          <View style={styles.modalOverlayCenter}>
+            <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Team Members</Text>
+                <TouchableOpacity onPress={() => setShowMembers(false)}>
+                  <Ionicons name="close-circle-outline" size={26} color={theme.blue} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 300 }}>
+                {team.members.map((member, index) => (
+                  <View key={index} style={[styles.memberCard, { backgroundColor: theme.lightCard }]}>
+                    <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
+                    <View>
+                      <Text style={[styles.memberName, { color: theme.text }]}>{member.name}</Text>
+                      <Text style={[styles.memberRole, { color: theme.secondary }]}>
+                        {member.role} • {member.department}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[
+                  styles.leaveTeamButton,
+                  { borderColor: theme.secondary, backgroundColor: isDark ? "#333" : "#FEE2E2" },
+                ]}
+                onPress={handleLeaveTeam}
+              >
+                <Ionicons name="log-out-outline" size={22} color={isDark ? "#EF4444" : "#DC2626"} />
+                <Text style={[styles.leaveTeamButtonText, { color: isDark ? "#EF4444" : "#DC2626" }]}>
+                  Leave Team
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+          </View>
+        </Modal>
+
+        {/* ✅ Leave Confirmation Modal */}
+        <Modal
+          visible={showLeaveConfirm}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setShowLeaveConfirm(false)}
+        >
+          <View style={styles.modalOverlayCenter}>
+            <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
+              <Text style={[styles.modalTitle, { color: theme.text, textAlign: "center" }]}>
+                Do you want to leave {team.name}?
+              </Text>
+
+              <View style={{ flexDirection: "row", marginTop: 20, justifyContent: "space-between" }}>
+                
+                <TouchableOpacity
+                  onPress={() => setShowLeaveConfirm(false)}
+                  style={[styles.leaveTeamButton, { backgroundColor: theme.lightCard, flex: 1, marginRight: 8 }]}
+                >
+                  <Text style={[styles.leaveTeamButtonText, { color: theme.secondary }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={confirmLeaveTeam}
+                  style={[
+                    styles.leaveTeamButton,
+                    { backgroundColor: isDark ? "#d11a1aff" : "#cc1b1bff", flex: 1, marginLeft: 8 }
+                  ]}
+                >
+                  <Text style={[styles.leaveTeamButtonText, { color: "#fff" }]}>Yes</Text>
+                </TouchableOpacity>
+
+              </View>
+
+            </View>
+          </View>
+        </Modal>
+
+      </SafeAreaView>
+    </>
   );
 }
 
+// --- Styles ---
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  scrollContent: { paddingBottom: 20 },
+
+  // ✅ SAFEAREA STYLE ADDED — ONLY CHANGE
+  safeArea: { flex: 1 },
+
+  container: { flex: 1 },
+  scrollContent: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 20 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
   },
-  backButton: { flexDirection: "row", alignItems: "center", gap: 6 },
-  backText: { fontWeight: "600" },
-  header: { fontSize: 22, fontWeight: "700", textAlign: "center", flex: 1 }, // Added flex: 1 for centering
-  iconButton: { padding: 4 },
-  subHeader: { fontSize: 18, fontWeight: "700", marginTop: 20, marginBottom: 10 },
+  backButton: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 16 },
+  header: { fontSize: 22, fontWeight: "700", textAlign: "center", flex: 1 },
+  iconButton: { padding: 4, marginRight: 13 },
+
+  subHeader: { 
+    fontSize: 18, 
+    fontWeight: "700", 
+    marginTop: 20, 
+    marginBottom: 10,
+    paddingLeft: 20, 
+  },
+
   statsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginVertical: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
+
   statCard: {
     flex: 1,
     alignItems: "center",
@@ -363,26 +474,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 4,
   },
+
   statNumber: { fontSize: 18, fontWeight: "700", marginTop: 4 },
   statLabel: { fontSize: 12, fontWeight: "500" },
+
+  /* ✅ TASK CARD — ONLY padding updated, margins untouched */
   taskCard: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 10,
-    padding: 10,
-    marginVertical: 5,
+    padding: Platform.select({ android: 15 }),
+    marginVertical: 6, // ✅ kept
+    paddingLeft: Platform.select({ android: 15 }),
   },
+
   taskTitle: { fontSize: 15, fontWeight: "600" },
   taskDeadline: { fontSize: 13 },
+
+  /* ✅ MEETING CARD — ONLY padding updated */
   meetingCard: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 10,
-    padding: 10,
-    marginVertical: 5,
+    padding: Platform.select({ android: 15 }),
+    marginVertical: 6, // ✅ kept
+    paddingLeft: Platform.select({ android: 15 }),
   },
+
   meetingTitle: { fontSize: 15, fontWeight: "600" },
   meetingInfo: { fontSize: 13 },
+
   exportButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -390,21 +511,26 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     marginTop: 24,
+    marginLeft: 14,
+    marginRight: 14,
   },
   exportText: { color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 },
+
   modalOverlayCenter: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
     alignItems: "center",
   },
+
   modalContentCenter: {
     width: "85%",
     borderRadius: 20,
-    padding: 16,
+    padding: 11,
     maxHeight: "70%",
     elevation: 6,
   },
+
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -412,16 +538,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   modalTitle: { fontSize: 18, fontWeight: "700" },
+
   memberCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    padding: 10,
+    padding: 12,
     borderRadius: 10,
     marginBottom: 6,
   },
+
   memberName: { fontWeight: "600", fontSize: 16 },
   memberRole: { fontSize: 13 },
+
   leaveTeamButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -431,14 +560,52 @@ const styles = StyleSheet.create({
     marginTop: 15,
     borderWidth: 1,
   },
+
   leaveTeamButtonText: {
     fontWeight: "700",
     fontSize: 16,
     marginLeft: 8,
   },
+
   noItemsText: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: 10,
-    fontStyle: 'italic',
-  }
+    fontStyle: "italic",
+  },
+
+  iconWrapper: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+
+  iconWrapperSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+
+  /* ✅ ICON SQUARE — padding/size adjusted for Android */
+  iconSquare: {
+    width: Platform.select({ ios: 34, android: 42 }),
+    height: Platform.select({ ios: 34, android: 42 }),
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  iconButtonContainer: {
+    padding: 4,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });

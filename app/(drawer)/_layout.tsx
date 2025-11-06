@@ -1,34 +1,128 @@
-import { Drawer } from 'expo-router/drawer';
-import { useColorScheme } from 'react-native';
-import CustomDrawer from '../components/customdrawer'; 
+import React from "react";
+import {
+  useColorScheme,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+} from "react-native";
 
-const getTheme = (isDark) => ({
-  text: isDark ? '#FFFFFF' : '#000000',
-  blue: '#1976D2',
+import { useSafeAreaInsets } from "react-native-safe-area-context"; 
+import { Drawer } from "expo-router/drawer";
+import { Ionicons } from "@expo/vector-icons";
+
+import CustomDrawer from "../components/customdrawer";
+
+// Theme System
+const getTheme = (isDark: boolean) => ({
+  text: isDark ? "#FFFFFF" : "#000000",
+  bg: isDark ? "#121212" : "#F4F8FB",
+  card: isDark ? "#1E1E1E" : "#FFFFFF",
+  border: isDark ? "#333" : "#ddd",
 });
 
 export default function DrawerLayout() {
   const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const isDark = scheme === "dark";
   const theme = getTheme(isDark);
+
+  // ✅ Safe areas for top and bottom
+  const insets = useSafeAreaInsets();
 
   return (
     <Drawer
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
         headerShown: true,
-        headerStyle: { backgroundColor: theme.blue },
-        headerTintColor: '#fff',
-        drawerLabelStyle: { color: theme.text },
+
+        // ✅ Custom Header
+        header: ({ navigation }) => (
+          <View
+            style={{
+              borderBottomWidth: 1,
+              elevation: 4,
+              shadowColor: "#000",
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              marginBottom: 3,
+              backgroundColor: theme.card,
+              borderBottomColor: theme.border,
+
+              // ✅ Pushes header under notch/status bar
+              paddingTop: insets.top,
+              paddingBottom: 4,
+            }}
+          >
+            <View style={styles.headerContainer}>
+              <TouchableOpacity
+                onPress={() => navigation.toggleDrawer()}
+                style={[styles.menuButton, { paddingHorizontal: 12 }]}
+              >
+                <Ionicons name="menu" size={24} color={theme.text} />
+              </TouchableOpacity>
+
+              <Text style={[styles.headerText, { color: theme.text }]}>
+                ReCap
+              </Text>
+
+              {/* Right spacer (keeps title centered) */}
+              <View style={{ width: 40 }} />
+            </View>
+          </View>
+        ),
+
+        // ✅ ✅ Correct safe-area handling for screen content
+        sceneContainerStyle: {
+          paddingBottom: insets.bottom, // ✅ No red underline
+          backgroundColor: theme.bg,
+        },
+
         drawerContentStyle: {
-          backgroundColor: isDark ? '#121212' : '#F4F8FB',
+          backgroundColor: theme.bg,
+        },
+
+        drawerContentContainerStyle: {
+          paddingBottom: insets.bottom, // ✅ drawer body respects safe area
+        },
+
+        drawerLabelStyle: {
+          color: theme.text,
         },
       }}
     >
-      <Drawer.Screen name="dashboardscreen" options={{ title: 'Home' }} />
-      <Drawer.Screen name="teams" options={{ title: 'Teams' }} />
-      <Drawer.Screen name="recording" options={{ title: 'Record' }} />
-      <Drawer.Screen name="logout" options={{ drawerItemStyle: { height: 0, overflow: 'hidden' } }} />
+      <Drawer.Screen name="dashboardscreen" options={{ title: "Dashboard" }} />
+      <Drawer.Screen name="teams" options={{ title: "Teams" }} />
+      <Drawer.Screen name="recording" options={{ title: "Record" }} />
+
+      {/* Hidden logout screen */}
+      <Drawer.Screen
+        name="logout"
+        options={{
+          drawerItemStyle: { height: 0, overflow: "hidden" },
+        }}
+      />
     </Drawer>
   );
 }
+
+// ✅ Static Styles
+const styles = StyleSheet.create({
+  headerContainer: {
+    height: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+  },
+
+  headerText: {
+    fontFamily: "Inter-Bold",
+    fontSize: 22,
+    fontWeight: "700",
+    marginLeft: 10,
+    flexGrow: 1,
+  },
+
+  menuButton: {
+    padding: 6,
+  },
+});
