@@ -10,16 +10,11 @@ import {
   TouchableOpacity,
   Modal,
   Platform,
-  // NOTE: You used the RN SafeAreaView which is older and less flexible for bottom insets.
-  // I've kept the import here to match your original structure, but the core fix 
-  // needs an adjustment in the component usage below.
-  SafeAreaView as RNSafeAreaView, 
+  SafeAreaView as RNSafeAreaView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { teams } from "../../data/mockData";
-// 💡 CRUCIAL IMPORT: Import the functional SafeAreaView from context library for explicit bottom control
-import { SafeAreaView } from "react-native-safe-area-context"; 
-
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const LOGO_SOURCE = require("../images/recap-logo.png");
 const { width, height } = Dimensions.get("window");
@@ -150,10 +145,26 @@ export default function DashboardScreen() {
   const newsScrollRef = useRef(null);
   const [selectedNews, setSelectedNews] = useState(null);
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
+
+  const getPhilippineTime = () => {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc + 8 * 3600000); // UTC+8
+};
+
+
+  // ✅ REAL-TIME PHILIPPINE STANDARD TIME FIX
+useEffect(() => {
+  const updatePHTime = () => {
+    setCurrentTime(getPhilippineTime());
+  };
+
+  updatePHTime(); // set on mount
+  const timer = setInterval(updatePHTime, 60000);
+
+  return () => clearInterval(timer);
+}, []);
+
 
   const userTeams = teams.filter((team) =>
     team.members.some((m) => m.name === currentUser)
@@ -201,19 +212,24 @@ export default function DashboardScreen() {
 
   const DashboardHeader = () => {
     const firstName = currentUser.split(" ")[0];
+
+    // ✅ ALWAYS USE PH TIME FOR GREETING
     const hour = currentTime.getHours();
-    let timeOfDay = "Morning";
-    if (hour >= 12 && hour < 17) timeOfDay = "Afternoon";
-    if (hour >= 17 || hour < 5) timeOfDay = "Evening";
+
+let timeOfDay = "Morning"; 
+
+if (hour >= 12 && hour < 17) {
+  timeOfDay = "Afternoon";
+} else if (hour >= 17) {
+  timeOfDay = "Evening";
+} 
+
 
     return (
       <View
         style={[
           styles.headerContainer,
-          // ⚠️ NOTE: This original spacing logic is kept, but it will interfere 
-          // with the SafeAreaView top padding if not carefully managed. 
-          // I've kept it as per your instruction "dont touch anything".
-          { backgroundColor: theme.blue }, 
+          { backgroundColor: theme.blue },
         ]}
       >
         <View style={styles.headerTextBox}>
@@ -247,21 +263,14 @@ export default function DashboardScreen() {
   }, []);
 
   return (
-    // ✅ FIX: Use SafeAreaView from 'react-native-safe-area-context'
-    // This provides dynamic safe area handling for both top and bottom edges.
-    // If you only want to adjust the content below the top status bar and above the bottom navigation, 
-    // use edges={['top', 'bottom']}
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}> 
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={["top", "bottom"]}>
       <ScrollView
         style={[styles.container, { backgroundColor: theme.bg }]}
-        // 💡 Note: The bottom padding on the contentContainerStyle is now redundant 
-        // because the parent SafeAreaView handles the bottom edge. I've kept it 
-        // here to adhere to your original structure, but it can be removed.
-        contentContainerStyle={{ paddingBottom: 30 * verticalScale }} 
+        contentContainerStyle={{ paddingBottom: 30 * verticalScale }}
       >
         <DashboardHeader />
 
-        {/* 📰 News */}
+        {/* News */}
         <Text style={[styles.sectionTitle, { color: theme.blue }]}>
           News Updates
         </Text>
@@ -292,7 +301,7 @@ export default function DashboardScreen() {
           ))}
         </ScrollView>
 
-        {/* 📋 Tasks */}
+        {/* Tasks */}
         <Text style={[styles.sectionTitle, { color: theme.blue }]}>
           Pending Tasks
         </Text>
@@ -302,7 +311,7 @@ export default function DashboardScreen() {
           ))}
         </View>
 
-        {/* 📅 Meetings */}
+        {/* Meetings */}
         <Text style={[styles.sectionTitle, { color: theme.blue }]}>
           Recent Meetings
         </Text>
@@ -312,7 +321,7 @@ export default function DashboardScreen() {
           ))}
         </View>
 
-        {/* 🌟 Modal */}
+        {/* Modal */}
         <Modal
           visible={!!selectedNews}
           transparent
@@ -387,6 +396,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 15 * scale, fontWeight: "600" },
   cardSub: { fontSize: 13 * scale },
+
   meetingItemDetails: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
   meetingTextContainer: { marginLeft: 10 * scale, flexShrink: 1 },
   statusBadge: {
@@ -395,6 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
   },
   statusBadgeText: { color: "#FFF", fontSize: 10 * scale, fontWeight: "700" },
+
   taskItemContent: { flexDirection: "row", alignItems: "center", flex: 1 },
   taskTextContainer: { marginLeft: 12 * scale, flex: 1 },
   taskFooter: {

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -34,15 +34,6 @@ export default function LoginScreen() {
   const isDark = scheme === "dark";
   const theme = getTheme(isDark);
   const router = useRouter();
-
-  // 🧭 Automatically redirect to dashboard when app starts
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace("./(drawer)/dashboardscreen"); // 👈 Change this to any route you want
-    }, 1500); // 1.5s delay for smooth transition
-
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleLogin = () => {
     router.replace("./(drawer)/dashboardscreen");
