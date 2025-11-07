@@ -5,7 +5,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
   useColorScheme,
   View
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 export default function RecordScreen() {
   const scheme = useColorScheme();
@@ -25,6 +25,8 @@ export default function RecordScreen() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const OPENAI_API_KEY = Constants.manifest?.extra?.expo_open_ai;
+
   const theme = {
     bg: isDark ? '#121212' : '#F4F8FB',
     card: isDark ? '#1E1E1E' : '#FFFFFF',
@@ -35,8 +37,6 @@ export default function RecordScreen() {
     secondary: isDark ? '#B0BEC5' : '#444',
     border: isDark ? '#333' : '#E0E0E0',
   };
-
-  const OPENAI_API_KEY = Constants.manifest?.extra?.expo_open_ai;
 
   useEffect(() => {
     (async () => {
@@ -49,15 +49,11 @@ export default function RecordScreen() {
 
   useEffect(() => {
     if (status === 'recording') {
-      timerRef.current = setInterval(() => {
-        setSeconds(s => s + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [status]);
 
   const formatTime = (totalSeconds: number) => {
@@ -68,13 +64,8 @@ export default function RecordScreen() {
 
   const startRecording = async () => {
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       setRecording(recording);
       setStatus('recording');
       setSeconds(0);
@@ -86,72 +77,51 @@ export default function RecordScreen() {
   };
 
   const pauseRecording = async () => {
+    if (!recording) return;
     try {
-      if (recording) {
-        await recording.pauseAsync();
-        setStatus('paused');
-      }
-    } catch (err) {
-      console.error('Pause failed', err);
-    }
+      await recording.pauseAsync();
+      setStatus('paused');
+    } catch (err) { console.error('Pause failed', err); }
   };
 
   const resumeRecording = async () => {
+    if (!recording) return;
     try {
-      if (recording) {
-        await recording.startAsync();
-        setStatus('recording');
-      }
-    } catch (err) {
-      console.error('Resume failed', err);
-    }
+      await recording.startAsync();
+      setStatus('recording');
+    } catch (err) { console.error('Resume failed', err); }
   };
 
   const stopRecording = async () => {
+    if (!recording) return;
     try {
-      if (!recording) return;
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecording(null);
       setStatus('ready');
 
-      if (!uri) {
-        Alert.alert('Error', 'Recording URI is null.');
-        return;
-      }
+      if (!uri) return Alert.alert('Error', 'Recording URI is null.');
 
-      // Save file
-      const folder = ((FileSystem as any).documentDirectory as string) + 'recordings/';
+      // Save locally
+      const folder = (FileSystem as any).documentDirectory + 'recordings/';
       await (FileSystem as any).makeDirectoryAsync(folder, { intermediates: true });
       const fileName = `recording_${Date.now()}.m4a`;
       const newPath = folder + fileName;
       await FileSystem.moveAsync({ from: uri, to: newPath });
 
-      // Read file as base64
-      const base64Audio = await FileSystem.readAsStringAsync(newPath, { encoding: 'base64' });
-
-      // Send to OpenAI Whisper
+      // Whisper AI transcription
       const formData = new FormData();
-      formData.append('file', {
-        uri: newPath,
-        name: fileName,
-        type: 'audio/m4a',
-      } as any);
+      formData.append('file', { uri: newPath, name: fileName, type: 'audio/m4a' } as any);
 
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` },
         body: formData,
       });
 
       const data = await response.json();
-      if (data?.text) {
-        setTranscript(data.text);
-      } else {
-        setTranscript('No transcription received');
-      }
+      if (data && data.text) setTranscript(data.text);
+      else setTranscript('No transcription received');
 
     } catch (err) {
       console.error('Stop and transcribe failed', err);
@@ -159,118 +129,72 @@ export default function RecordScreen() {
     }
   };
 
-  const statusText = status === 'recording'
-    ? 'RECORDING'
-    : status === 'paused'
-    ? 'PAUSED'
-    : 'READY TO START';
-
-  const statusColor = status === 'recording'
-    ? theme.red
-    : status === 'paused'
-    ? theme.secondary
-    : theme.blue;
+  const statusText = status === 'recording' ? 'RECORDING' : status === 'paused' ? 'PAUSED' : 'READY TO START';
+  const statusColor = status === 'recording' ? theme.red : status === 'paused' ? theme.secondary : theme.blue;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
-      <View style={[styles.container, { backgroundColor: theme.bg }]}>
-        <View style={[styles.transcriptionCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.transcriptionTitle, { color: theme.blue }]}>Transcription</Text>
-          <ScrollView style={{ flex: 1 }}>
-            <Text style={{ color: theme.text }}>{ transcript || 'Your transcription will appear here.' }</Text>
-          </ScrollView>
-        </View>
+    <SafeAreaProvider>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <View style={[styles.container, { backgroundColor: theme.bg }]}>
+          <View style={[styles.transcriptionCard, { backgroundColor: theme.card }]}>
+            <Text style={[styles.transcriptionTitle, { color: theme.blue }]}>Transcription</Text>
+            <ScrollView style={{ flex: 1 }}>
+              <Text style={{ color: theme.text }}>{ transcript || 'Your transcription will appear here.' }</Text>
+            </ScrollView>
+          </View>
 
-        <View style={[styles.controlArea, { backgroundColor: theme.card }]}>
-          <Text style={[styles.statusText, { color: statusColor }]}>• {statusText} •</Text>
-
-          {(status === 'recording' || status === 'paused') && (
-            <Text style={[styles.timerText, { color: theme.text }]}>{formatTime(seconds)}</Text>
-          )}
-
-          <View style={styles.buttonRow}>
-            {(status === 'recording' || status === 'paused') && (
-              <TouchableOpacity
-                style={[styles.smallButton, { backgroundColor: status === 'recording' ? theme.secondary : theme.blue }]}
-                onPress={ status === 'recording' ? pauseRecording : resumeRecording }
-                activeOpacity={0.8}
-              >
-                <Ionicons name={status === 'recording' ? 'pause' : 'play'} size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[ styles.recordButton, { backgroundColor: status === 'recording' ? theme.red : theme.blue } ]}
-              onPress={ status === 'ready' ? startRecording : status === 'recording' ? pauseRecording : resumeRecording }
-              activeOpacity={0.8}
-            >
-              <Ionicons name={ status === 'recording' ? 'mic' : 'mic-outline'} size={36} color="#FFFFFF" />
-            </TouchableOpacity>
+          <View style={[styles.controlArea, { backgroundColor: theme.card }]}>
+            <Text style={[styles.statusText, { color: statusColor }]}>• {statusText} •</Text>
 
             {(status === 'recording' || status === 'paused') && (
+              <Text style={[styles.timerText, { color: theme.text }]}>{formatTime(seconds)}</Text>
+            )}
+
+            <View style={styles.buttonRow}>
+              {(status === 'recording' || status === 'paused') && (
+                <TouchableOpacity
+                  style={[styles.smallButton, { backgroundColor: status === 'recording' ? theme.secondary : theme.blue }]}
+                  onPress={status === 'recording' ? pauseRecording : resumeRecording}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={status === 'recording' ? 'pause' : 'play'} size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
-                style={[styles.smallButton, { backgroundColor: theme.green }]}
-                onPress={ stopRecording }
+                style={[styles.recordButton, { backgroundColor: status === 'recording' ? theme.red : theme.blue }]}
+                onPress={status === 'ready' ? startRecording : status === 'recording' ? pauseRecording : resumeRecording}
                 activeOpacity={0.8}
               >
-                <Ionicons name="stop" size={24} color="#FFFFFF" />
+                <Ionicons name={status === 'recording' ? 'mic' : 'mic-outline'} size={36} color="#FFFFFF" />
               </TouchableOpacity>
-            )}
+
+              {(status === 'recording' || status === 'paused') && (
+                <TouchableOpacity
+                  style={[styles.smallButton, { backgroundColor: theme.green }]}
+                  onPress={stopRecording}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="stop" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, padding: 16 },
-  transcriptionCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  transcriptionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  controlArea: {
-    padding: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  timerText: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 15,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    width: '100%',
-  },
-  recordButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 30,
-  },
-  smallButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  transcriptionCard: { flex: 1, borderRadius: 16, padding: 16, marginBottom: 20 },
+  transcriptionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  controlArea: { padding: 20, borderRadius: 16, alignItems: 'center' },
+  statusText: { fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  timerText: { fontSize: 20, fontWeight: '700', marginBottom: 15 },
+  buttonRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', width: '100%' },
+  recordButton: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginHorizontal: 30 },
+  smallButton: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
 });
