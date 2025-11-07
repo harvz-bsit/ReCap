@@ -8,12 +8,13 @@ import {
   useColorScheme,
   Dimensions,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+
+import { useAuth } from "../auth/GoogleAuth";
 
 const LOGO_SOURCE = require("./images/recap-logo.png");
 const { width } = Dimensions.get("window");
@@ -35,9 +36,13 @@ export default function LoginScreen() {
   const theme = getTheme(isDark);
   const router = useRouter();
 
-  const handleLogin = () => {
-    router.replace("./(drawer)/dashboardscreen");
-  };
+  // ✅ useAuth INSIDE the component (correct place)
+  const { signInWithGoogle, user, loading } = useAuth();
+
+  // ✅ Redirect if already logged in
+  if (user) {
+    router.replace("(drawer)/dashboardscreen");
+  }
 
   return (
     <KeyboardAvoidingView
@@ -46,17 +51,26 @@ export default function LoginScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
     >
       <ScrollView
-        contentContainerStyle={[styles.container, { backgroundColor: theme.bg }]}
+        contentContainerStyle={[
+          styles.container,
+          { backgroundColor: theme.bg },
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* App Logo Wrapper */}
+        {/* Logo */}
         <View style={[styles.logoWrapper, { backgroundColor: theme.blue }]}>
-          <Image source={LOGO_SOURCE} style={styles.logo} resizeMode="contain" />
+          <Image
+            source={LOGO_SOURCE}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Login Card */}
         <View style={[styles.card, { backgroundColor: theme.card }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Welcome to ReCap</Text>
+          <Text style={[styles.title, { color: theme.text }]}>
+            Welcome to ReCap
+          </Text>
           <Text style={[styles.subtitle, { color: theme.secondary }]}>
             Minutes, Tasks, and Progress, All Connected.
           </Text>
@@ -70,11 +84,12 @@ export default function LoginScreen() {
                 borderColor: theme.secondary,
               },
             ]}
-            onPress={() => Alert.alert("Google Sign In", "Google sign-in clicked")}
+            onPress={signInWithGoogle}
+            disabled={loading}
           >
             <Ionicons name="logo-google" size={20} color={theme.blue} />
             <Text style={[styles.googleText, { color: theme.text }]}>
-              Sign up with Google
+              {loading ? "Please wait..." : "Sign up with Google"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -124,11 +139,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
     marginBottom: 24,
-  },
-  loginButtonText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "700",
   },
   googleButton: {
     flexDirection: "row",

@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 
-import { useSafeAreaInsets } from "react-native-safe-area-context"; 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Drawer } from "expo-router/drawer";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -26,82 +26,79 @@ export default function DrawerLayout() {
   const isDark = scheme === "dark";
   const theme = getTheme(isDark);
 
-  // ✅ Safe areas for top and bottom
   const insets = useSafeAreaInsets();
 
   return (
-    <Drawer
-      drawerContent={(props) => <CustomDrawer {...props} />}
-      screenOptions={{
-        headerShown: true,
+    // ✅ WRAP ENTIRE NAVIGATION WITH AUTH PROVIDER\
+      <Drawer
+        drawerContent={(props) => <CustomDrawer {...props} />}
+        screenOptions={{
+          headerShown: true,
 
-        // ✅ Custom Header
-        header: ({ navigation }) => (
-          <View
-            style={{
-              borderBottomWidth: 1,
-              elevation: 4,
-              shadowColor: "#000",
-              shadowOpacity: 0.1,
-              shadowRadius: 4,
-              marginBottom: 3,
-              backgroundColor: theme.card,
-              borderBottomColor: theme.border,
+          // ✅ Custom Header
+          header: ({ navigation }) => (
+            <View
+              style={{
+                borderBottomWidth: 1,
+                elevation: 4,
+                shadowColor: "#000",
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                marginBottom: 3,
+                backgroundColor: theme.card,
+                borderBottomColor: theme.border,
+                paddingTop: insets.top,
+                paddingBottom: 4,
+              }}
+            >
+              <View style={styles.headerContainer}>
+                <TouchableOpacity
+                  onPress={() => navigation.toggleDrawer()}
+                  style={[styles.menuButton, { paddingHorizontal: 12 }]}
+                >
+                  <Ionicons name="menu" size={24} color={theme.text} />
+                </TouchableOpacity>
 
-              // ✅ Pushes header under notch/status bar
-              paddingTop: insets.top,
-              paddingBottom: 4,
-            }}
-          >
-            <View style={styles.headerContainer}>
-              <TouchableOpacity
-                onPress={() => navigation.toggleDrawer()}
-                style={[styles.menuButton, { paddingHorizontal: 12 }]}
-              >
-                <Ionicons name="menu" size={24} color={theme.text} />
-              </TouchableOpacity>
+                <Text style={[styles.headerText, { color: theme.text }]}>
+                  ReCap
+                </Text>
 
-              <Text style={[styles.headerText, { color: theme.text }]}>
-                ReCap
-              </Text>
-
-              {/* Right spacer (keeps title centered) */}
-              <View style={{ width: 40 }} />
+                <View style={{ width: 40 }} />
+              </View>
             </View>
-          </View>
-        ),
+          ),
 
-        // ✅ ✅ Correct safe-area handling for screen content
-        sceneContainerStyle: {
-          paddingBottom: insets.bottom, // ✅ No red underline
-          backgroundColor: theme.bg,
-        },
+          // ✅ Safe area for screen
+          sceneContainerStyle: {
+            paddingBottom: insets.bottom,
+            backgroundColor: theme.bg,
+          },
 
-        drawerContentStyle: {
-          backgroundColor: theme.bg,
-        },
+          drawerContentStyle: {
+            backgroundColor: theme.bg,
+          },
 
-        drawerContentContainerStyle: {
-          paddingBottom: insets.bottom, // ✅ drawer body respects safe area
-        },
+          drawerContentContainerStyle: {
+            paddingBottom: insets.bottom,
+          },
 
-        drawerLabelStyle: {
-          color: theme.text,
-        },
-      }}
-    >
-      <Drawer.Screen name="dashboardscreen" options={{ title: "Dashboard" }} />
-      <Drawer.Screen name="teams" options={{ title: "Teams" }} />
-      <Drawer.Screen name="recording" options={{ title: "Record" }} />
-
-      {/* Hidden logout screen */}
-      <Drawer.Screen
-        name="logout"
-        options={{
-          drawerItemStyle: { height: 0, overflow: "hidden" },
+          drawerLabelStyle: {
+            color: theme.text,
+          },
         }}
-      />
-    </Drawer>
+      >
+        <Drawer.Screen name="dashboardscreen" options={{ title: "Dashboard" }} />
+        <Drawer.Screen name="teams" options={{ title: "Teams" }} />
+        <Drawer.Screen name="recording" options={{ title: "Record" }} />
+
+        {/* Hidden logout screen */}
+        <Drawer.Screen
+          name="logout"
+          options={{
+            drawerItemStyle: { height: 0, overflow: "hidden" },
+          }}
+        />
+      </Drawer>
   );
 }
 

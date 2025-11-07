@@ -39,11 +39,16 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+
+    "extra": {
+      "GOOGLE_WEB_CLIENT_ID": "885333900987-b3mgggubpsqgbo0s7ktqnea5rd62ica5.apps.googleusercontent.com"
     }
   }
 }
