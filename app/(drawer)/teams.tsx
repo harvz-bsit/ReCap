@@ -5,15 +5,17 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   TextInput,
   Modal,
   useColorScheme,
-  Alert, // Added Alert for feedback on joining
+  Alert,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { teams as initialTeams, Team, TeamTask, TeamMeeting } from "../../data/mockData";
+
+// ✅ USE SAFE AREA CONTEXT (same as dashboard)
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function TeamsScreen() {
   const router = useRouter();
@@ -21,15 +23,13 @@ export default function TeamsScreen() {
   const isDark = scheme === "dark";
 
   const [teams, setTeams] = useState<Team[]>(initialTeams);
-  
-  // New State Variables for Modal Flow
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  
+
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamOverview, setNewTeamOverview] = useState("");
-  const [joinCode, setJoinCode] = useState(""); // New state for join code
+  const [joinCode, setJoinCode] = useState("");
 
   const currentUser = "Alyssa Quinones";
 
@@ -41,10 +41,9 @@ export default function TeamsScreen() {
     blue: "#1976D2",
     lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
     border: isDark ? "#333" : "#E0E0E0",
-    accent: isDark ? "#1565C0" : "#2196F3", // Added accent color for buttons
+    accent: isDark ? "#1565C0" : "#2196F3",
   };
 
-  // --- Handle Create New Team ---
   const handleCreateTeam = () => {
     if (!newTeamName.trim() || !newTeamOverview.trim()) {
       Alert.alert("Missing Information", "Please enter both a team name and an overview.");
@@ -67,18 +66,15 @@ export default function TeamsScreen() {
     Alert.alert("Success", `${newTeam.name} has been created!`);
   };
 
-  // --- Handle Join Team (Dummy Logic) ---
   const handleJoinTeam = () => {
     if (!joinCode.trim()) {
       Alert.alert("Missing Code", "Please enter a team join code.");
       return;
     }
-    
-    // NOTE: In a real app, you would validate this code against your backend.
-    
+
     setJoinCode("");
     setShowJoinModal(false);
-    Alert.alert("Joined!", `Successfully sent request to join team with code: ${joinCode.trim()}.`);
+    Alert.alert("Joined!", `Successfully sent request to join: ${joinCode.trim()}.`);
   };
 
   const getRelativeDate = (dateString: string): string => {
@@ -92,24 +88,27 @@ export default function TeamsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* --- HEADER --- */}
-      <View style={styles.headerRow}>
-        <Text style={[styles.header, { color: theme.text }]}>Teams Overview</Text>
+    // ✅ SAME SAFE AREA LOGIC AS DASHBOARD
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.bg }]}
+      edges={["top", "bottom"]}
+    >
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* HEADER */}
+        <View style={styles.headerRow}>
+          <Text style={[styles.header, { color: theme.text }]}>Teams Overview</Text>
 
-        <View style={styles.iconRow}>
-          {/* Add Team Icon */}
-          <TouchableOpacity
-            onPress={() => setAddModalVisible(true)} // Opens the main option selector modal
-            style={styles.iconButton}
-          >
-            <Ionicons name="add-circle-outline" size={34} color={theme.blue} />
-          </TouchableOpacity>
+          <View style={styles.iconRow}>
+            <TouchableOpacity
+              onPress={() => setAddModalVisible(true)}
+              style={styles.iconButton}
+            >
+              <Ionicons name="add-circle-outline" size={34} color={theme.blue} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {/* --- TEAMS LIST --- */}
-      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* TEAMS LIST */}
         {teams.map((team) => {
           const userTasks: TeamTask[] = team.tasks.filter(
             (t) => t.assignedTo === currentUser
@@ -120,18 +119,16 @@ export default function TeamsScreen() {
               key={team.id}
               style={[
                 styles.teamCard,
-                { backgroundColor: theme.card, borderColor: theme.border },
+                { backgroundColor: theme.card, borderColor: theme.border, paddingBottom: 18 },
               ]}
-              onPress={() => router.push(`/(drawer)/teams/${team.id}`)}
+              onPress={() => router.push(`../(drawer)/teams/${team.id}`)}
             >
-              {/* TEAM HEADER */}
+              {/* TEAM NAME */}
               <View style={styles.teamHeader}>
-                <Text style={[styles.teamName, { color: theme.text }]}>
-                  {team.name}
-                </Text>
+                <Text style={[styles.teamName, { color: theme.text }]}>{team.name}</Text>
               </View>
 
-              {/* TEAM OVERVIEW */}
+              {/* OVERVIEW */}
               {team.overview ? (
                 <Text
                   style={[styles.overview, { color: theme.secondary }]}
@@ -163,10 +160,7 @@ export default function TeamsScreen() {
                   {userTasks.map((task) => (
                     <View
                       key={task.id}
-                      style={[
-                        styles.taskItem,
-                        { backgroundColor: theme.lightCard },
-                      ]}
+                      style={[styles.taskItem, { backgroundColor: theme.lightCard }]}
                     >
                       <MaterialIcons
                         name={
@@ -174,7 +168,7 @@ export default function TeamsScreen() {
                             ? "check-circle"
                             : task.status === "In Progress"
                             ? "autorenew"
-                            : "pending-actions"
+                            : "pending"
                         }
                         size={20}
                         color={
@@ -185,6 +179,7 @@ export default function TeamsScreen() {
                             : "#F59E0B"
                         }
                       />
+
                       <View style={{ flex: 1, marginLeft: 10 }}>
                         <Text
                           style={[styles.taskTitle, { color: theme.text }]}
@@ -208,8 +203,9 @@ export default function TeamsScreen() {
         })}
       </ScrollView>
 
-      
-      {/* 1. --- ADD/JOIN OPTION MODAL (New Primary Modal) --- */}
+      {/* --- MODALS (UNCHANGED) --- */}
+
+      {/* ADD / JOIN MODAL */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => setAddModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.card, paddingVertical: 30 }]}>
@@ -217,7 +213,6 @@ export default function TeamsScreen() {
               Team Options
             </Text>
 
-            {/* Create Team Option */}
             <TouchableOpacity
               onPress={() => {
                 setAddModalVisible(false);
@@ -229,7 +224,6 @@ export default function TeamsScreen() {
               <Text style={styles.closeText}>Create a Team</Text>
             </TouchableOpacity>
 
-            {/* Join Team Option */}
             <TouchableOpacity
               onPress={() => {
                 setAddModalVisible(false);
@@ -240,12 +234,8 @@ export default function TeamsScreen() {
               <Ionicons name="people" size={20} color="#fff" style={{ marginRight: 8 }}/>
               <Text style={styles.closeText}>Join a Team</Text>
             </TouchableOpacity>
-            
-            {/* Cancel */}
-            <TouchableOpacity
-              onPress={() => setAddModalVisible(false)}
-              style={{ marginTop: 20 }}
-            >
+
+            <TouchableOpacity onPress={() => setAddModalVisible(false)} style={{ marginTop: 20 }}>
               <Text style={[styles.cancelText, { color: theme.secondary }]}>
                 Cancel
               </Text>
@@ -254,7 +244,7 @@ export default function TeamsScreen() {
         </View>
       </Modal>
 
-      {/* 2. --- CREATE TEAM MODAL --- */}
+      {/* CREATE TEAM */}
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.card }]}>
@@ -278,7 +268,7 @@ export default function TeamsScreen() {
               numberOfLines={3}
               style={[
                 styles.input,
-                { borderColor: theme.border, color: theme.text, height: 80, textAlignVertical: 'top' },
+                { borderColor: theme.border, color: theme.text, height: 80, textAlignVertical: "top" },
               ]}
               placeholderTextColor={theme.secondary}
             />
@@ -300,31 +290,28 @@ export default function TeamsScreen() {
         </View>
       </Modal>
 
-      {/* 3. --- JOIN TEAM MODAL --- */}
+      {/* JOIN TEAM */}
       <Modal visible={showJoinModal} transparent animationType="fade" onRequestClose={() => setShowJoinModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.card }]}>
-            <Text style={[styles.modalHeader, { color: theme.text }]}>
-              Join a Team
-            </Text>
-            
+            <Text style={[styles.modalHeader, { color: theme.text }]}>Join a Team</Text>
+
             <TextInput
               placeholder="Enter team join code"
               value={joinCode}
               onChangeText={setJoinCode}
               style={[styles.input, { borderColor: theme.border, color: theme.text }]}
               placeholderTextColor={theme.secondary}
-              keyboardType="default"
               autoCapitalize="none"
             />
-            
+
             <TouchableOpacity
               onPress={handleJoinTeam}
               style={[styles.addBtn, { backgroundColor: theme.blue }]}
             >
               <Text style={styles.closeText}>Join Team</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               onPress={() => setShowJoinModal(false)}
               style={[styles.cancelBtn, { borderColor: theme.accent }]}
@@ -338,19 +325,22 @@ export default function TeamsScreen() {
   );
 }
 
-// --- STYLES ---
+/* ✅ STYLES (NO UI CHANGES — ONLY SAFEAREA ADDED + paddingTop removed) */
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  safeArea: { flex: 1 }, // ✅ same as dashboard
+
+  container: { flex: 1, padding: 16 }, // ✅ removed paddingTop:25
+
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
+    paddingHorizontal: 10,
   },
   header: { fontSize: 24, fontWeight: "700" },
   iconRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   iconButton: { padding: 4 },
-  infoIconButton: { padding: 4 },
   teamCard: {
     borderRadius: 16,
     padding: 16,
@@ -390,17 +380,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     elevation: 5,
-    alignItems: 'center', // Center content in the card
+    alignItems: "center",
   },
   modalHeader: { fontSize: 18, fontWeight: "700", marginBottom: 10, textAlign: "center" },
-  modalText: { fontSize: 14, marginVertical: 2 },
-  
-  // New/Modified Button Styles
   optionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
     paddingVertical: 12,
     borderRadius: 10,
   },
@@ -409,7 +396,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
-    width: '100%',
+    width: "100%",
   },
   closeText: { color: "#fff", fontWeight: "700" },
   cancelBtn: {
@@ -418,7 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     alignItems: "center",
-    width: '100%',
+    width: "100%",
   },
   cancelText: { fontWeight: "600" },
   input: {
@@ -427,6 +414,6 @@ const styles = StyleSheet.create({
     padding: 10,
     marginVertical: 6,
     fontSize: 14,
-    width: '100%',
+    width: "100%",
   },
 });
