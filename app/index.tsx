@@ -1,95 +1,148 @@
-import React from "react";
+// LoginScreen.tsx
+import bcrypt from "bcryptjs";
+import { useRouter } from "expo-router";
+import { child, get, ref } from "firebase/database";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  Alert,
   Image,
-  useColorScheme,
-  Dimensions,
-  ScrollView,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { db } from "../firebase/firebaseConfig";
 
-import { useAuth } from "../auth/GoogleAuth";
-
-const LOGO_SOURCE = require("./images/recap-logo.png");
-const { width } = Dimensions.get("window");
-
-const getTheme = (isDark: boolean) => ({
-  bg: isDark ? "#121212" : "#F4F8FB",
-  card: isDark ? "#1E1E1E" : "#FFFFFF",
-  text: isDark ? "#FFFFFF" : "#000000",
-  blue: "#1976D2",
-  secondary: isDark ? "#B0BEC5" : "#444",
-  lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
-  accent: "#1976D2",
-  error: "#DC2626",
-});
+const LOGO = require("../app/images/recap-logo.png");
 
 export default function LoginScreen() {
+  const router = useRouter();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
-  const theme = getTheme(isDark);
-  const router = useRouter();
 
-  // ✅ useAuth INSIDE the component (correct place)
-  const { signInWithGoogle, user, loading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // ✅ Redirect if already logged in
-  if (user) {
-    router.replace("(drawer)/dashboardscreen");
-  }
+  // Listen to keyboard show/hide events
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
+      setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardHeight(0)
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleLogin = async () => {
+    if (!email || !password)
+      return Alert.alert("Error", "Please fill all fields");
+    setLoading(true);
+
+    try {
+      const snapshot = await get(child(ref(db), "users"));
+      const data = snapshot.val();
+
+      const foundUser = data
+        ? Object.values(data).find((user: any) => user.email === email)
+        : null;
+
+      if (!foundUser) {
+        Alert.alert("Error", "Invalid email or password");
+        return;
+      }
+
+      const userObj = foundUser as { email: string; password: string };
+      const passwordMatch = bcrypt.compareSync(password, userObj.password);
+
+      if (!passwordMatch) {
+        Alert.alert("Error", "Invalid email or password");
+        return;
+      }
+
+      Alert.alert("Success", "Logged in successfully!");
+      router.replace("/(drawer)/dashboardscreen");
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const theme = {
+    bg: isDark ? "#121212" : "#F4F8FB",
+    card: isDark ? "#1E1E1E" : "#FFFFFF",
+    text: isDark ? "#FFFFFF" : "#000000",
+    inputBg: isDark ? "#2A2A2A" : "#FFF",
+    button: "#1976D2",
+  };
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      style={{ flex: 1, backgroundColor: theme.bg }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { backgroundColor: theme.bg },
+          { paddingBottom: keyboardHeight + 24 },
         ]}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo */}
-        <View style={[styles.logoWrapper, { backgroundColor: theme.blue }]}>
-          <Image
-            source={LOGO_SOURCE}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
+        <Image
+          source={LOGO}
+          style={styles.logo}
+          resizeMode="contain"
+        />
 
-        {/* Login Card */}
         <View style={[styles.card, { backgroundColor: theme.card }]}>
-          <Text style={[styles.title, { color: theme.text }]}>
-            Welcome to ReCap
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.secondary }]}>
-            Minutes, Tasks, and Progress, All Connected.
-          </Text>
+          <Text style={[styles.title, { color: theme.text }]}>Login</Text>
 
-          {/* Google Sign In */}
+          <TextInput
+            placeholder="Email"
+            placeholderTextColor={isDark ? "#888" : "#aaa"}
+            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          <TextInput
+            placeholder="Password"
+            placeholderTextColor={isDark ? "#888" : "#aaa"}
+            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+
           <TouchableOpacity
-            style={[
-              styles.googleButton,
-              {
-                backgroundColor: isDark ? theme.lightCard : theme.card,
-                borderColor: theme.secondary,
-              },
-            ]}
-            onPress={signInWithGoogle}
+            style={[styles.button, { backgroundColor: theme.button }]}
+            onPress={handleLogin}
             disabled={loading}
           >
-            <Ionicons name="logo-google" size={20} color={theme.blue} />
-            <Text style={[styles.googleText, { color: theme.text }]}>
-              {loading ? "Please wait..." : "Sign up with Google"}
+            <Text style={styles.buttonText}>{loading ? "Logging in..." : "Login"}</Text>
+          </TouchableOpacity>
+
+          {/* Sign Up Link */}
+          <TouchableOpacity onPress={() => router.push("/signup")} style={{ marginTop: 16 }}>
+            <Text style={{ color: theme.text, textAlign: "center" }}>
+              Don't have an account?{" "}
+              <Text style={{ fontWeight: "bold", color: theme.button }}>Sign Up</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -101,25 +154,14 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
-  logoWrapper: {
-    width: width * 0.45,
-    height: width * 0.45,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-  },
   logo: {
-    width: "80%",
-    height: "80%",
+    width: 120,
+    height: 120,
+    marginBottom: 24,
   },
   card: {
     width: "100%",
@@ -130,27 +172,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 15,
-    textAlign: "center",
-    marginBottom: 24,
-  },
-  googleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    paddingVertical: 12,
-    borderWidth: 1,
-    gap: 10,
-  },
-  googleText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  title: { fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 24 },
+  input: { borderRadius: 12, padding: 12, marginVertical: 8, fontSize: 16 },
+  button: { borderRadius: 12, paddingVertical: 14, marginTop: 16 },
+  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" },
 });

@@ -1,15 +1,15 @@
 import React from "react";
 import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
   useColorScheme,
   View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
 } from "react-native";
 
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Drawer } from "expo-router/drawer";
 import { Ionicons } from "@expo/vector-icons";
+import { Drawer } from "expo-router/drawer";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import CustomDrawer from "../components/customdrawer";
 
