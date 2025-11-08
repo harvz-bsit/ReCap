@@ -1,4 +1,5 @@
 // LoginScreen.tsx
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
 import { child, get, ref } from "firebase/database";
@@ -73,6 +74,7 @@ export default function LoginScreen() {
       }
 
       Alert.alert("Success", "Logged in successfully!");
+      await AsyncStorage.setItem("loggedInUserEmail", email);
       router.replace("/(drawer)/dashboardscreen");
     } catch (err: any) {
       Alert.alert("Error", err.message || "Something went wrong");
