@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.recap.UMAK"
     },
     "web": {
       "output": "static",
@@ -46,7 +47,6 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "GOOGLE_WEB_CLIENT_ID": "885333900987-b3mgggubpsqgbo0s7ktqnea5rd62ica5.apps.googleusercontent.com"
     }
