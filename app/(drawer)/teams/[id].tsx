@@ -1,229 +1,343 @@
 // app/(drawer)/teams/[id].tsx
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { onValue, ref } from "firebase/database";
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import { get, onValue, ref, set, update } from "firebase/database";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   Alert,
   Linking,
   Modal,
-  Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { teams as staticTeams } from "../../../data/mockData";
-import { db } from "../../../firebase/firebaseConfig";
 
-// --- Types ---
-interface Team {
-  id: string;
+import MeetingItem from "@/app/(drawer)/teams/components/MeetingItem";
+import StatCard from "@/app/(drawer)/teams/components/StatCard";
+import TaskItem from "@/app/(drawer)/teams/components/TaskItem";
+import { styles } from "@/app/(drawer)/teams/styles";
+
+import { authRN, db } from "@/firebase/firebaseConfig";
+
+type Member = {
   name: string;
-  tasks: Task[];
-  meetings: Meeting[];
-  members: { name: string; role: string; department: string }[];
-}
-
-interface Task {
-  id: string;
-  title: string;
-  deadline: string;
-  status: "Pending" | "Completed";
-}
-
-interface Meeting {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-}
-
-// --- Helpers ---
-const formatDate = (dateStr: string) => {
-  try {
-    const parts = dateStr.split("-");
-    if (parts.length !== 3) return dateStr;
-    const date = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-  } catch {
-    return dateStr;
-  }
+  role?: string;
+  department?: string;
 };
 
-const getTheme = (isDark: boolean) => ({
-  bg: isDark ? "#121212" : "#F4F8FB",
-  card: isDark ? "#1E1E1E" : "#FFFFFF",
-  text: isDark ? "#FFFFFF" : "#000000",
-  secondary: isDark ? "#B0BEC5" : "#444",
-  blue: "#1976D2",
-  accent: isDark ? "#1565C0" : "#2196F3",
-  lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
-  iconBg: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
-  iconBorder: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
-});
+type FirebaseMembers = Record<string, Member> | Member[] | undefined;
 
-const StatCard = ({ icon, color, number, label, theme }: any) => (
-  <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
-    <View style={[styles.iconWrapper, { backgroundColor: theme.iconBg, borderColor: theme.iconBorder }]}>
-      <MaterialIcons name={icon} size={26} color={color} />
-    </View>
-    <Text style={[styles.statNumber, { color: theme.text }]}>{number}</Text>
-    <Text style={[styles.statLabel, { color: theme.secondary }]}>{label}</Text>
-  </View>
-);
-
-const TaskItem = ({ task, theme, toggleTaskStatus }: any) => {
-  const isCompleted = task.status === "Completed";
-  return (
-    <View style={[styles.taskCard, { backgroundColor: theme.card }]}>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.taskTitle, { color: isCompleted ? "#16A34A" : theme.text, textDecorationLine: isCompleted ? "line-through" : "none" }]}>
-          {task.title}
-        </Text>
-        <Text style={[styles.taskDeadline, { color: theme.secondary }]}>
-          {isCompleted ? `Completed: ${formatDate(task.deadline)}` : `Deadline: ${formatDate(task.deadline)}`}
-        </Text>
-      </View>
-      <TouchableOpacity onPress={() => toggleTaskStatus(task.id)} style={styles.iconButtonContainer}>
-        <View style={[styles.iconSquare, { backgroundColor: theme.iconBg, borderColor: theme.iconBorder }]}>
-          <Ionicons name={isCompleted ? "checkbox" : "square-outline"} size={22} color={isCompleted ? "#16A34A" : theme.blue} />
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-const MeetingItem = ({ meeting, theme, getMeetingStatus }: any) => {
-  const status = getMeetingStatus(meeting.date, meeting.time);
-  const statusColor = status === "Missed" ? "#E53935" : theme.blue;
-  return (
-    <View style={[styles.meetingCard, { backgroundColor: theme.card }]}>
-      <View style={[styles.iconWrapperSmall, { backgroundColor: theme.iconBg, borderColor: theme.iconBorder }]}>
-        <MaterialIcons name={status === "Missed" ? "event-busy" : "calendar-today"} size={22} color={theme.blue} />
-      </View>
-      <View style={{ marginLeft: 10 }}>
-        <Text style={[styles.meetingTitle, { color: theme.text }]}>{meeting.title}</Text>
-        <Text style={[styles.meetingInfo, { color: theme.secondary }]}>{formatDate(meeting.date)} • {meeting.time}</Text>
-        <Text style={{ color: statusColor, fontWeight: "600", fontSize: 13 }}>{status}</Text>
-      </View>
-    </View>
-  );
-};
+const BAD_NAMES = ["Alyssa Quinones", "Mark Reyes", "Emma Diaz", "", null as any, undefined as any];
 
 export default function TeamDetailsScreen() {
-  const { id, team: teamParam } = useLocalSearchParams();
+  const { id } = useLocalSearchParams();
   const router = useRouter();
   const navigation = useNavigation();
-  const scheme = useColorScheme();
-  const isDark = scheme === "dark";
-  const theme = getTheme(isDark);
 
-  // start with param or static
-  const initialTeam: Team | undefined = teamParam ? JSON.parse(teamParam as string) : staticTeams.find((t) => t.id === id);
-  const [team, setTeam] = useState<Team | undefined>(initialTeam);
-  const [taskList, setTaskList] = useState<Task[]>(initialTeam ? [...(initialTeam.tasks || [])] : []);
+  const [team, setTeam] = useState<any>(null);
+  const [taskList, setTaskList] = useState<any[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
-  // load from firebase if id exists (and keep mock fallback)
-  useEffect(() => {
-    if (!id) return;
-    const teamRef = ref(db, `teams/${id}`);
-    const off = onValue(teamRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const fetched: Team = {
-          id,
-          name: data.name || "Unnamed Team",
-          members: data.members || [],
-          tasks: data.tasks || [],
-          meetings: data.meetings || [],
-        };
-        setTeam(fetched);
-        setTaskList(fetched.tasks || []);
-      } else {
-        // if no firebase data -> keep initialTeam (mock)
-        setTeam(initialTeam);
-        setTaskList(initialTeam?.tasks || []);
-      }
-    });
-    return () => off();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  // --- local theme just for minor inline colors in join-code container
+  const isDark = useMemo(() => false, []); // your shared styles already handle colors; keep neutral here
 
-  useLayoutEffect(() => {
-    if (team?.name) navigation.setOptions({ title: team.name });
-  }, [navigation, team]);
+  /** ---------- Helpers ---------- */
 
-  if (!team)
-    return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={["top", "bottom"]}>
-        <Text style={{ color: theme.text, textAlign: "center", marginTop: 50, fontSize: 18, fontWeight: "700" }}>Your task</Text>
-        <Text style={{ color: theme.secondary, textAlign: "center", marginTop: 10 }}>No task yet.</Text>
-      </SafeAreaView>
-    );
+  // Get active user profile + display name (nickname > full name)
+  const getLoggedInUserProfile = async () => {
+    const user = authRN.currentUser;
+    if (!user) return null;
 
-  const now = new Date();
-  const getMeetingStatus = (dateStr: string, timeStr: string) => new Date(`${dateStr}T${timeStr}:00`) < now ? "Missed" : "Upcoming";
-  const toggleTaskStatus = (taskId: string) => setTaskList((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: t.status === "Completed" ? "Pending" : "Completed" } : t)));
-  const handleExport = () => Linking.openURL("https://calendar.google.com/calendar/u/0/r");
-  const handleLeaveTeam = () => setShowLeaveConfirm(true);
-  const confirmLeaveTeam = () => {
-    setShowLeaveConfirm(false);
-    setShowMembers(false);
-    Alert.alert("Success", `You have left ${team.name}.`);
-    router.push("/teams");
+    const snap = await get(ref(db, `users/${user.uid}`));
+    if (!snap.exists()) return null;
+
+    const profile = snap.val();
+    const displayName =
+      (profile.nickname && String(profile.nickname).trim()) ||
+      `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim();
+
+    return { profile, displayName };
   };
 
-  const pendingTasks = (taskList || []).filter((t) => t.status !== "Completed");
-  const completedTasks = (taskList || []).filter((t) => t.status === "Completed");
+  // Normalize members to an array for rendering (Leader first)
+  const toArrayMembers = (members: FirebaseMembers): Member[] => {
+    let arr: Member[] = [];
+    if (!members) arr = [];
+    else if (Array.isArray(members)) arr = members.filter(Boolean);
+    else arr = Object.values(members ?? {});
+
+    // Leader first (no badges, just order)
+    const leaders = arr.filter((m) => (m.role || "").toLowerCase() === "leader");
+    const others = arr.filter((m) => (m.role || "").toLowerCase() !== "leader");
+    return [...leaders, ...others];
+  };
+
+  // Upsert current user into team.members (supports array or object)
+  const upsertMember = async (teamId: string, members: FirebaseMembers, me: Member) => {
+    const user = authRN.currentUser;
+    if (!user) return;
+
+    // If object keyed by uid -> simple put
+    if (members && !Array.isArray(members)) {
+      await update(ref(db, `teams/${teamId}/members`), {
+        [user.uid]: { name: me.name, role: me.role, department: me.department },
+      });
+      return;
+    }
+
+    // If array -> ensure one entry with my name; also drop mock names
+    const arr: Member[] = Array.isArray(members) ? members.slice() : [];
+    const withoutMocks = arr.filter((m) => m && !BAD_NAMES.includes(m.name as any));
+    const idx = withoutMocks.findIndex((m) => m.name === me.name);
+
+    if (idx === -1) {
+      withoutMocks.push(me);
+    } else {
+      withoutMocks[idx] = { ...withoutMocks[idx], role: me.role, department: me.department };
+    }
+
+    await set(ref(db, `teams/${teamId}/members`), withoutMocks);
+  };
+
+  // Replace bad/empty assignedTo with me, return cleaned array
+  const sanitizeTasks = (tasks: any[], meName: string) =>
+    (tasks || []).map((t) => ({
+      ...t,
+      assignedTo: BAD_NAMES.includes(t?.assignedTo as any) ? meName : t?.assignedTo,
+    }));
+
+  /** ---------- Load & Sync ---------- */
+  useEffect(() => {
+    if (!id) return;
+
+    const teamRef = ref(db, `teams/${id}`);
+
+    const unsubscribe = onValue(teamRef, async (snapshot) => {
+      const userInfo = await getLoggedInUserProfile();
+      const meName = userInfo?.displayName || "User";
+      const meMember: Member = {
+        name: meName,
+        role: userInfo?.profile?.workType || "Member",
+        department: userInfo?.profile?.department || "IT",
+      };
+
+      const data = snapshot.val();
+
+      // If team exists
+      if (data) {
+        const membersRaw: FirebaseMembers = data.members;
+        const tasksRaw = data.tasks ? Object.values(data.tasks) : [];
+        const meetingsRaw = data.meetings ? Object.values(data.meetings) : [];
+
+        // Ensure I am in members (handles array or object)
+        await upsertMember(String(id), membersRaw, meMember);
+
+        // Clean tasks; if changed, write back (keep ids)
+        const fixedTasks = sanitizeTasks(tasksRaw, meName);
+        if (JSON.stringify(fixedTasks) !== JSON.stringify(tasksRaw)) {
+          const taskObj: any = {};
+          fixedTasks.forEach((t: any) => {
+            if (t?.id) taskObj[t.id] = t;
+          });
+          await update(ref(db, `teams/${id}`), { tasks: taskObj });
+        }
+
+        setTeam({
+          id,
+          name: data.name || "Unnamed Team",
+          overview: data.overview || "",
+          members: toArrayMembers(membersRaw),
+          tasks: fixedTasks,
+          meetings: meetingsRaw,
+          joinCode: data.joinCode || "", // <-- used in the modal
+        });
+        setTaskList(fixedTasks);
+        return;
+      }
+
+      // Team does not exist -> create with me as the first member
+      if (userInfo) {
+        await set(ref(db, `teams/${id}`), {
+          name: "New Team",
+          overview: "",
+          members: { [authRN.currentUser?.uid as string]: meMember },
+          tasks: {},
+          meetings: {},
+          // joinCode intentionally omitted here; created via teams.tsx flow
+        });
+
+        setTeam({
+          id,
+          name: "New Team",
+          overview: "",
+          members: [meMember],
+          tasks: [],
+          meetings: [],
+          joinCode: "",
+        });
+        setTaskList([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [id]);
+
+  /** ---------- UI plumbing (styles retained) ---------- */
+  useLayoutEffect(() => {
+    if (team?.name) (navigation as any)?.setOptions?.({ title: team.name });
+  }, [team]);
+
+  if (!team) {
+    return (
+      <SafeAreaView style={[styles.safeArea]}>
+        <Text style={{ textAlign: "center", marginTop: 40 }}>Loading team...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const now = new Date();
+  const getMeetingStatus = (date: string, time: string) =>
+    new Date(`${date}T${time}:00`) < now ? "Missed" : "Upcoming";
+
+  const toggleTaskStatus = (taskId: string) =>
+    setTaskList((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, status: t.status === "Completed" ? "Pending" : "Completed" }
+          : t
+      )
+    );
+
+  const pendingTasks = taskList.filter((t) => t.status !== "Completed");
+  const completedTasks = taskList.filter((t) => t.status === "Completed");
+
+  const handleExport = () => Linking.openURL("https://calendar.google.com/calendar/u/0/r");
+
+  const copyJoinCode = async () => {
+    if (!team?.joinCode) return;
+    await Clipboard.setStringAsync(team.joinCode);
+    Alert.alert("Copied", "Join code copied to clipboard.");
+  };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={["top", "bottom"]}>
+    <SafeAreaView style={[styles.safeArea]}>
       {/* HEADER */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.push("/teams")} style={styles.backButton}>
-          <Ionicons name="arrow-back-circle-outline" size={24} color={theme.blue} />
+        <TouchableOpacity onPress={() => router.push("/(drawer)/teams")} style={styles.backButton}>
+          <Ionicons name="arrow-back-circle-outline" size={24} color="#1976D2" />
         </TouchableOpacity>
-        <Text style={[styles.header, { color: theme.text }]}>{team.name}</Text>
+
+        <Text style={[styles.header]}>{team.name}</Text>
+
         <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
-          <Ionicons name="information-circle" size={26} color={theme.blue} />
+          <Ionicons name="information-circle" size={26} color="#1976D2" />
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Stats */}
+        {/* STATS */}
         <View style={styles.statsContainer}>
-          <StatCard icon="assignment" color="#F59E0B" number={pendingTasks.length} label="Pending" theme={theme} />
-          <StatCard icon="task-alt" color="#16A34A" number={completedTasks.length} label="Completed" theme={theme} />
-          <View style={[styles.statCard, { backgroundColor: theme.lightCard }]}>
-            <View style={[styles.iconWrapper, { backgroundColor: theme.iconBg, borderColor: theme.iconBorder }]}>
-              <MaterialIcons name="calendar-today" size={26} color={theme.blue} />
-            </View>
-            <Text style={[styles.statNumber, { color: theme.text }]}>{(team.meetings || []).length}</Text>
-            <Text style={[styles.statLabel, { color: theme.secondary }]}>Meetings</Text>
-          </View>
+          <StatCard
+            icon="assignment"
+            color="#F59E0B"
+            number={pendingTasks.length}
+            label="Pending"
+            theme={{
+              lightCard: "#F6F9FF",
+              iconBg: "rgba(0,0,0,0.04)",
+              iconBorder: "rgba(0,0,0,0.08)",
+              text: "#000",
+              secondary: "#444",
+            }}
+          />
+
+          <StatCard
+            icon="task-alt"
+            color="#16A34A"
+            number={completedTasks.length}
+            label="Completed"
+            theme={{
+              lightCard: "#F6F9FF",
+              iconBg: "rgba(0,0,0,0.04)",
+              iconBorder: "rgba(0,0,0,0.08)",
+              text: "#000",
+              secondary: "#444",
+            }}
+          />
+
+          <StatCard
+            icon="calendar-today"
+            color="#1976D2"
+            number={team.meetings?.length || 0}
+            label="Meetings"
+            theme={{
+              lightCard: "#F6F9FF",
+              iconBg: "rgba(0,0,0,0.04)",
+              iconBorder: "rgba(0,0,0,0.08)",
+              text: "#000",
+              secondary: "#444",
+            }}
+          />
         </View>
 
-        {/* Tasks */}
-        <Text style={[styles.subHeader, { color: theme.text }]}><MaterialIcons name="assignment" size={18} color={theme.text} /> Tasks</Text>
-        {pendingTasks.length > 0 ? pendingTasks.map((t) => <TaskItem key={t.id} task={t} theme={theme} toggleTaskStatus={toggleTaskStatus} />) : <Text style={[styles.noItemsText, { color: theme.secondary }]}>No pending tasks!</Text>}
+        {/* TASKS */}
+        <Text style={[styles.subHeader]}>
+          <MaterialIcons name="assignment" size={18} /> Tasks
+        </Text>
+
+        {pendingTasks.length > 0 ? (
+          pendingTasks.map((t) => (
+            <TaskItem
+              key={t.id}
+              task={t}
+              theme={{ text: "#000", secondary: "#444", ...team.theme }}
+              toggleTaskStatus={toggleTaskStatus}
+            />
+          ))
+        ) : (
+          <Text style={[styles.noItemsText]}>No pending tasks!</Text>
+        )}
+
+        {/* COMPLETED TASKS */}
         {completedTasks.length > 0 && (
           <>
-            <Text style={[styles.subHeader, { color: theme.text }]}><MaterialIcons name="task-alt" size={18} color="#16A34A" /> Completed Tasks</Text>
-            {completedTasks.map((t) => <TaskItem key={t.id} task={t} theme={theme} toggleTaskStatus={toggleTaskStatus} />)}
+            <Text style={[styles.subHeader]}>
+              <MaterialIcons name="task-alt" size={18} color="#16A34A" /> Completed Tasks
+            </Text>
+
+            {completedTasks.map((t) => (
+              <TaskItem key={t.id} task={t} theme={{ text: "#000" }} toggleTaskStatus={toggleTaskStatus} />
+            ))}
           </>
         )}
 
-        {/* Meetings */}
-        <Text style={[styles.subHeader, { color: theme.text }]}><MaterialIcons name="event" size={18} color={theme.text} /> Meetings</Text>
-        {(team.meetings || []).length > 0 ? (team.meetings || []).map((m) => <MeetingItem key={m.id} meeting={m} theme={theme} getMeetingStatus={getMeetingStatus} />) : <Text style={[styles.noItemsText, { color: theme.secondary }]}>No meetings scheduled.</Text>}
+        {/* MEETINGS */}
+        <Text style={[styles.subHeader]}>
+          <MaterialIcons name="event" size={18} /> Meetings
+        </Text>
 
-        <TouchableOpacity style={[styles.exportButton, { backgroundColor: theme.accent }]} onPress={handleExport}>
+        {team.meetings?.length > 0 ? (
+          team.meetings.map((m: any) => (
+            <MeetingItem
+              key={m.id}
+              meeting={m}
+              theme={{ text: "#000", secondary: "#444" }}
+              getMeetingStatus={getMeetingStatus}
+            />
+          ))
+        ) : (
+          <Text style={[styles.noItemsText]}>No meetings scheduled.</Text>
+        )}
+
+        {/* EXPORT */}
+        <TouchableOpacity
+          style={[styles.exportButton, { backgroundColor: "#2196F3" }]}
+          onPress={handleExport}
+        >
           <Ionicons name="cloud-upload-sharp" size={20} color="#fff" />
           <Text style={styles.exportText}>Export to Google Calendar</Text>
         </TouchableOpacity>
@@ -231,49 +345,131 @@ export default function TeamDetailsScreen() {
         <View style={{ height: 30 }} />
       </ScrollView>
 
-      {/* Members Modal */}
-      <Modal visible={showMembers} animationType="fade" transparent onRequestClose={() => setShowMembers(false)}>
+      {/* MEMBERS / INFO MODAL (now includes Join Code container) */}
+      <Modal visible={showMembers} transparent animationType="fade">
         <View style={styles.modalOverlayCenter}>
-          <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
+          <View style={[styles.modalContentCenter]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Team Members</Text>
-              <TouchableOpacity onPress={() => setShowMembers(false)}><Ionicons name="close-circle-outline" size={26} color={theme.blue} /></TouchableOpacity>
+              <Text style={[styles.modalTitle]}>Team Info</Text>
+              <TouchableOpacity onPress={() => setShowMembers(false)}>
+                <Ionicons name="close-circle-outline" size={26} color="#1976D2" />
+              </TouchableOpacity>
             </View>
 
+{/* Join Code Container (Dark/Light Adaptive) */}
+{!!team.joinCode && (
+  <TouchableOpacity
+    onPress={copyJoinCode}
+    activeOpacity={0.8}
+    style={{
+      borderWidth: 1,
+      borderColor: isDark ? "#444" : "rgba(0,0,0,0.1)",
+      backgroundColor: isDark ? "#000" : "#FFF",
+      padding: 14,
+      borderRadius: 14,
+      marginBottom: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    }}
+  >
+    <View>
+      <Text
+        style={[
+          styles.memberRole,
+          { fontWeight: "700", color: isDark ? "#FFF" : "#000" },
+        ]}
+      >
+        Join Code
+      </Text>
+
+      <Text
+        style={[
+          styles.memberName,
+          { color: isDark ? "#FFF" : "#000" },
+        ]}
+        selectable
+      >
+        {team.joinCode}
+      </Text>
+    </View>
+
+    <Ionicons
+      name="copy-outline"
+      size={22}
+      color={isDark ? "#FFF" : "#1976D2"}
+    />
+  </TouchableOpacity>
+)}
+
+
+            {/* Members List */}
             <ScrollView style={{ maxHeight: 300 }}>
-              {(team.members || []).map((member, idx) => (
-                <View key={idx} style={[styles.memberCard, { backgroundColor: theme.lightCard }]}>
-                  <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
+              {team.members.map((member: any, idx: number) => (
+                <View key={idx} style={[styles.memberCard]}>
+                  <Ionicons name="person-circle-sharp" size={32} color="#1976D2" />
                   <View>
-                    <Text style={[styles.memberName, { color: theme.text }]}>{member.name}</Text>
-                    <Text style={[styles.memberRole, { color: theme.secondary }]}>{member.role} • {member.department}</Text>
+                    <Text style={[styles.memberName]}>{member.name}</Text>
+                    <Text style={[styles.memberRole]}>
+                      {member.role} • {member.department}
+                    </Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.leaveTeamButton, { borderColor: theme.secondary, backgroundColor: isDark ? "#333" : "#FEE2E2" }]}
-              onPress={handleLeaveTeam}
+              style={[
+                styles.leaveTeamButton,
+                { backgroundColor: "#FEE2E2", borderColor: "#DC2626" },
+              ]}
+              onPress={() => setShowLeaveConfirm(true)}
             >
-              <Ionicons name="log-out-outline" size={22} color={isDark ? "#EF4444" : "#DC2626"} />
-              <Text style={[styles.leaveTeamButtonText, { color: isDark ? "#EF4444" : "#DC2626" }]}>Leave Team</Text>
+              <Ionicons name="log-out-outline" size={22} color="#DC2626" />
+              <Text style={[styles.leaveTeamButtonText, { color: "#DC2626" }]}>
+                Leave Team
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Leave Confirmation */}
-      <Modal visible={showLeaveConfirm} animationType="fade" transparent onRequestClose={() => setShowLeaveConfirm(false)}>
+      {/* LEAVE CONFIRM */}
+      <Modal visible={showLeaveConfirm} transparent animationType="fade">
         <View style={styles.modalOverlayCenter}>
-          <View style={[styles.modalContentCenter, { backgroundColor: theme.card }]}>
-            <Text style={[styles.modalTitle, { color: theme.text, textAlign: "center" }]}>Do you want to leave {team.name}?</Text>
-            <View style={{ flexDirection: "row", marginTop: 20, justifyContent: "space-between" }}>
-              <TouchableOpacity onPress={() => setShowLeaveConfirm(false)} style={[styles.leaveTeamButton, { backgroundColor: theme.lightCard, flex: 1, marginRight: 8 }]}>
-                <Text style={[styles.leaveTeamButtonText, { color: theme.secondary }]}>Cancel</Text>
+          <View style={[styles.modalContentCenter]}>
+            <Text style={[styles.modalTitle, { textAlign: "center" }]}>
+              Do you want to leave {team.name}?
+            </Text>
+
+            <View style={{ flexDirection: "row", marginTop: 20 }}>
+              <TouchableOpacity
+                onPress={() => setShowLeaveConfirm(false)}
+                style={[
+                  styles.leaveTeamButton,
+                  { backgroundColor: "#F6F9FF", flex: 1, marginRight: 8 },
+                ]}
+              >
+                <Text style={[styles.leaveTeamButtonText, { color: "#444" }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={confirmLeaveTeam} style={[styles.leaveTeamButton, { backgroundColor: isDark ? "#d11a1aff" : "#cc1b1bff", flex: 1, marginLeft: 8 }]}>
-                <Text style={[styles.leaveTeamButtonText, { color: "#fff" }]}>Yes</Text>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowLeaveConfirm(false);
+                  setShowMembers(false);
+                  Alert.alert("Success", `You have left ${team.name}.`);
+                  router.push("/teams");
+                }}
+                style={[
+                  styles.leaveTeamButton,
+                  { backgroundColor: "#cc1b1b", flex: 1, marginLeft: 8 },
+                ]}
+              >
+                <Text style={[styles.leaveTeamButtonText, { color: "#fff" }]}>
+                  Yes
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -282,40 +478,3 @@ export default function TeamDetailsScreen() {
     </SafeAreaView>
   );
 }
-
-// --- Styles (exactly your original styles) ---
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 20 },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  backButton: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 16 },
-  header: { fontSize: 22, fontWeight: "700", textAlign: "center", flex: 1 },
-  iconButton: { padding: 4, marginRight: 13 },
-  subHeader: { fontSize: 18, fontWeight: "700", marginTop: 20, marginBottom: 10, paddingLeft: 20 },
-  statsContainer: { flexDirection: "row", justifyContent: "space-between", marginVertical: 12, paddingHorizontal: 6, paddingVertical: 4 },
-  statCard: { flex: 1, alignItems: "center", padding: 12, borderRadius: 12, marginHorizontal: 4 },
-  statNumber: { fontSize: 18, fontWeight: "700", marginTop: 4 },
-  statLabel: { fontSize: 12, fontWeight: "500" },
-  taskCard: { flexDirection: "row", alignItems: "center", borderRadius: 10, padding: Platform.select({ android: 15 }), marginVertical: 6, paddingLeft: Platform.select({ android: 15 }) },
-  taskTitle: { fontSize: 15, fontWeight: "600" },
-  taskDeadline: { fontSize: 13 },
-  meetingCard: { flexDirection: "row", alignItems: "center", borderRadius: 10, padding: Platform.select({ android: 15 }), marginVertical: 6, paddingLeft: Platform.select({ android: 15 }) },
-  meetingTitle: { fontSize: 15, fontWeight: "600" },
-  meetingInfo: { fontSize: 13 },
-  exportButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 12, borderRadius: 10, marginTop: 24, marginLeft: 14, marginRight: 14 },
-  exportText: { color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 },
-  modalOverlayCenter: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
-  modalContentCenter: { width: "85%", borderRadius: 20, padding: 11, maxHeight: "70%", elevation: 6 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  modalTitle: { fontSize: 18, fontWeight: "700" },
-  memberCard: { flexDirection: "row", alignItems: "center", padding: 10, borderRadius: 10, marginVertical: 6, gap: 12 },
-  memberName: { fontSize: 15, fontWeight: "600" },
-  memberRole: { fontSize: 13 },
-  leaveTeamButton: { flexDirection: "row", justifyContent: "center", alignItems: "center", padding: 10, borderRadius: 12, marginTop: 14, borderWidth: 1, gap: 6 },
-  leaveTeamButtonText: { fontWeight: "700", fontSize: 14 },
-  iconWrapper: { padding: 8, borderRadius: 8, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  iconWrapperSmall: { padding: 6, borderRadius: 6, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  iconButtonContainer: { marginLeft: 10 },
-  iconSquare: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  noItemsText: { fontSize: 14, fontWeight: "600", paddingLeft: 20, marginVertical: 6 },
-});

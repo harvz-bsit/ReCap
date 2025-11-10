@@ -32,7 +32,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // Listen to keyboard show/hide events
+  // Keyboard listeners
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
       setKeyboardHeight(e.endCoordinates.height)
@@ -50,6 +50,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!email || !password)
       return Alert.alert("Error", "Please fill all fields");
+
     setLoading(true);
 
     try {
@@ -57,7 +58,7 @@ export default function LoginScreen() {
       const data = snapshot.val();
 
       const foundUser = data
-        ? Object.values(data).find((user: any) => user.email === email)
+        ? Object.entries(data).find(([uid, user]: any) => user.email === email)
         : null;
 
       if (!foundUser) {
@@ -65,7 +66,8 @@ export default function LoginScreen() {
         return;
       }
 
-      const userObj = foundUser as { email: string; password: string };
+      const [uid, userObj]: any = foundUser;
+
       const passwordMatch = bcrypt.compareSync(password, userObj.password);
 
       if (!passwordMatch) {
@@ -73,8 +75,19 @@ export default function LoginScreen() {
         return;
       }
 
+      // ✅ STORE FULL USER DATA FOR TEAMS SYSTEM
+      await AsyncStorage.setItem(
+        "loggedInUser",
+        JSON.stringify({
+          uid,
+          email: userObj.email,
+          firstName: userObj.firstName,
+          lastName: userObj.lastName,
+          workType: userObj.workType || "Member",
+        })
+      );
+
       Alert.alert("Success", "Logged in successfully!");
-      await AsyncStorage.setItem("loggedInUserEmail", email);
       router.replace("/(drawer)/dashboardscreen");
     } catch (err: any) {
       Alert.alert("Error", err.message || "Something went wrong");
@@ -104,11 +117,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Image
-          source={LOGO}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <Image source={LOGO} style={styles.logo} resizeMode="contain" />
 
         <View style={[styles.card, { backgroundColor: theme.card }]}>
           <Text style={[styles.title, { color: theme.text }]}>Login</Text>
@@ -116,7 +125,10 @@ export default function LoginScreen() {
           <TextInput
             placeholder="Email"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
-            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
+            style={[
+              styles.input,
+              { backgroundColor: theme.inputBg, color: theme.text },
+            ]}
             keyboardType="email-address"
             autoCapitalize="none"
             value={email}
@@ -126,7 +138,10 @@ export default function LoginScreen() {
           <TextInput
             placeholder="Password"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
-            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
+            style={[
+              styles.input,
+              { backgroundColor: theme.inputBg, color: theme.text },
+            ]}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -137,14 +152,20 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>{loading ? "Logging in..." : "Login"}</Text>
+            <Text style={styles.buttonText}>
+              {loading ? "Logging in..." : "Login"}
+            </Text>
           </TouchableOpacity>
 
-          {/* Sign Up Link */}
-          <TouchableOpacity onPress={() => router.push("/signup")} style={{ marginTop: 16 }}>
+          <TouchableOpacity
+            onPress={() => router.push("/signup")}
+            style={{ marginTop: 16 }}
+          >
             <Text style={{ color: theme.text, textAlign: "center" }}>
               Don't have an account?{" "}
-              <Text style={{ fontWeight: "bold", color: theme.button }}>Sign Up</Text>
+              <Text style={{ fontWeight: "bold", color: theme.button }}>
+                Sign Up
+              </Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -174,8 +195,18 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  title: { fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 24 },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 24,
+  },
   input: { borderRadius: 12, padding: 12, marginVertical: 8, fontSize: 16 },
   button: { borderRadius: 12, paddingVertical: 14, marginTop: 16 },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
+    textAlign: "center",
+  },
 });
