@@ -1,20 +1,39 @@
-import React, { useState, useEffect, useRef } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { off, onValue, ref } from "firebase/database";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  useColorScheme,
+  Alert,
+  Dimensions,
   Modal,
   Platform,
-  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useColorScheme,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { Team, teams } from "../../data/mockData";
+
+// Import Firebase config
+import { db } from "@/firebase/firebaseConfig"; // Assuming your firebaseConfig is in this path
 
 // ✅ Correct Safe Area Context
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
+// =================================================================
+// 🚨 TYPE DEFINITION (Replaced mockData import)
+// =================================================================
+type Team = {
+  id: string;
+  name: string;
+  overview?: string;
+  members: Record<string, any>;
+  tasks: Record<string, any>;
+  meetings: Record<string, any>;
+  joinCode?: string;
+  creatorUID?: string;
+};
 
 // ✅ Universal Adaptive Padding
 const useAdaptivePadding = () => {
@@ -22,9 +41,11 @@ const useAdaptivePadding = () => {
   const screenHeight = Dimensions.get("window").height;
 
   const sizeFactor =
-    screenHeight < 700 ? 0.85 : // Small Android phones
-    screenHeight > 820 ? 1.15 : // Tablets / big phones
-    1;
+    screenHeight < 700
+      ? 0.85 // Small Android phones
+      : screenHeight > 820
+      ? 1.15 // Tablets / big phones
+      : 1;
 
   return {
     top: Math.max(insets.top, 12) * sizeFactor,
@@ -40,6 +61,12 @@ export default function RecordScreen() {
 
   const adaptive = useAdaptivePadding();
 
+  // =================================================================
+  // ✅ NEW STATE: Firebase/User Data
+  // =================================================================
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]); // Real teams array
+
   const [status, setStatus] = useState<"ready" | "recording" | "paused" | "review">(
     "ready"
   );
@@ -50,20 +77,77 @@ export default function RecordScreen() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const theme = {
-    bg: isDark ? "#121212" : "#F4F8FB",
-    card: isDark ? "#1E1E1E" : "#FFFFFF",
-    text: isDark ? "#FFFFFF" : "#000000",
-    blue: "#1976D2",
-    red: "#E53935",
-    green: "#4CAF50",
-    secondary: isDark ? "#B0BEC5" : "#444",
-    lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
-    border: isDark ? "#333" : "#E0E0E0",
-    greyed: "#B0BEC5",
-  };
+  const theme = useMemo(
+    () => ({
+      bg: isDark ? "#121212" : "#F4F8FB",
+      card: isDark ? "#1E1E1E" : "#FFFFFF",
+      text: isDark ? "#FFFFFF" : "#000000",
+      blue: "#1976D2",
+      red: "#E53935",
+      green: "#4CAF50",
+      secondary: isDark ? "#B0BEC5" : "#444",
+      lightCard: isDark ? "#2A2A2A" : "#F6F9FF",
+      border: isDark ? "#333" : "#E0E0E0",
+      greyed: "#B0BEC5",
+    }),
+    [isDark]
+  );
 
-  // ✅ Timer Logic
+  // =================================================================
+  // ✅ LOGIC: Fetch User UID (Runs once on load)
+  // =================================================================
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const stored = await AsyncStorage.getItem("loggedInUser");
+        if (stored) {
+          const user = JSON.parse(stored);
+          setCurrentUserUid(user.uid || user.id || null);
+        }
+      } catch (error) {
+        console.error("Failed to load user UID:", error);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // =================================================================
+  // ✅ LOGIC: Real-time Teams Listener (Runs when UID changes)
+  // =================================================================
+  useEffect(() => {
+    if (!currentUserUid) return;
+
+    const teamsRef = ref(db, "teams");
+
+    const listener = onValue(teamsRef, (snapshot) => {
+      const teamsData = snapshot.val() || {};
+      const teamList: Team[] = [];
+
+      Object.entries(teamsData).forEach(([id, data]: [string, any]) => {
+        // Filter: Only include teams where the current user is a member
+        if (data.members && currentUserUid in data.members) {
+          teamList.push({
+            id,
+            name: data.name || "Unnamed Team",
+            overview: data.overview || "",
+            members: data.members,
+            tasks: data.tasks,
+            meetings: data.meetings,
+            joinCode: data.joinCode,
+            creatorUID: data.creatorUID,
+          });
+        }
+      });
+      setTeams(teamList);
+    });
+
+    // Cleanup listener on unmount
+    return () => off(teamsRef, "value", listener);
+  }, [currentUserUid]);
+  
+  // =================================================================
+  // ✅ Timer Logic (Original)
+  // =================================================================
   useEffect(() => {
     if (status === "recording") {
       intervalRef.current = setInterval(() => setSeconds((prev) => prev + 1), 1000);
@@ -109,10 +193,25 @@ export default function RecordScreen() {
   };
 
   const handleCheckAndSave = () => {
-    if (status === "review") setShowSaveModal(true);
+    if (status === "review") {
+      if (teams.length === 0) {
+        Alert.alert(
+          "No Teams Found",
+          "You must be a member of at least one team to save a meeting summary.",
+          [{ text: "OK" }]
+        );
+        handleCancelSave(); // Reset state
+      } else {
+        setShowSaveModal(true);
+      }
+    }
   };
 
   const handleSaveToTeam = (team: Team) => {
+    // 🚨 TODO: Implement Firebase logic here to push the transcription/summary
+    // to team.meetings or a separate 'summaries' collection under the team ID.
+    
+    // For now, simulate save:
     setShowSaveModal(false);
     setSeconds(0);
     setStatus("ready");
@@ -276,25 +375,31 @@ export default function RecordScreen() {
         </Text>
 
         <ScrollView style={styles.teamListScroll}>
-          {teams.map((team) => (
-            <TouchableOpacity
-              key={team.id}
-              style={[
-                styles.teamSelectButton,
-                {
-                  backgroundColor: theme.lightCard,
-                  borderColor: theme.border,
-                },
-              ]}
-              onPress={() => handleSaveToTeam(team)}
-            >
-              <Ionicons name="folder-open-outline" size={24} color={theme.blue} />
-              <Text style={[styles.teamSelectText, { color: theme.text }]}>
-                {team.name}
-              </Text>
-              <Ionicons name="save-outline" size={20} color={theme.green} />
-            </TouchableOpacity>
-          ))}
+          {teams.length === 0 ? (
+            <Text style={{ color: theme.secondary, textAlign: 'center', padding: 20 }}>
+                You are not currently a member of any team.
+            </Text>
+          ) : (
+            teams.map((team) => (
+              <TouchableOpacity
+                key={team.id}
+                style={[
+                  styles.teamSelectButton,
+                  {
+                    backgroundColor: theme.lightCard,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={() => handleSaveToTeam(team)}
+              >
+                <Ionicons name="folder-open-outline" size={24} color={theme.blue} />
+                <Text style={[styles.teamSelectText, { color: theme.text }]}>
+                  {team.name}
+                </Text>
+                <Ionicons name="save-outline" size={20} color={theme.green} />
+              </TouchableOpacity>
+            ))
+          )}
         </ScrollView>
 
         <TouchableOpacity style={styles.cancelButton} onPress={handleCancelSave}>

@@ -252,7 +252,7 @@ export default function CustomDrawer(props: any) {
           onPress={() => setShowConfirmLogout(true)}
         >
           <Ionicons name="log-out-outline" size={22} color={theme.red} />
-          <Text style={[styles.logoutText, { color: theme.red }]}>Logout</Text>
+          <Text style={[styles.logoutText, { color: theme.red }]}> Logout</Text>
         </TouchableOpacity>
       </DrawerContentScrollView>
 

@@ -35,9 +35,9 @@ type Team = {
   id: string;
   name: string;
   overview?: string;
-  members: Record<string, Member> | Member[];
-  tasks: Record<string, TeamTask> | TeamTask[];
-  meetings: Record<string, any> | any[];
+  members: Record<string, Member> | Record<string, any>; // Adjusted for FB structure
+  tasks: Record<string, TeamTask> | Record<string, any>; // Adjusted for FB structure
+  meetings: Record<string, any> | Record<string, any>; // Adjusted for FB structure
   joinCode?: string;
   creatorUID?: string;
 };
@@ -255,10 +255,28 @@ export default function TeamsScreen() {
   };
 
   // -----------------------------------------------------
-  // ✅ Render team card with member count
+  // ✅ Render team card with member count, task, and meeting summary
   // -----------------------------------------------------
   const renderTeam = ({ item }: { item: Team }) => {
-    const memberCount = Object.keys(item.members || {}).length;
+    const members = item.members || {};
+    const tasks = item.tasks || {};
+    const meetings = item.meetings || {};
+
+    const memberCount = Object.keys(members).length;
+    
+    // Convert tasks object to array and count pending ones
+    const taskArray = Object.values(tasks) as TeamTask[];
+    const pendingTasksCount = taskArray.filter(t => t.status !== "Completed").length;
+
+    // Convert meetings object to array and count upcoming ones
+    const meetingArray = Object.values(meetings) as any[];
+    const now = new Date();
+    const upcomingMeetingsCount = meetingArray.filter(m => {
+        // Assuming m.date is 'YYYY-MM-DD' and m.time is 'HH:MM'
+        if (!m.date || !m.time) return false;
+        return new Date(`${m.date}T${m.time}:00`) >= now;
+    }).length;
+
 
     return (
       <TouchableOpacity
@@ -298,12 +316,31 @@ export default function TeamsScreen() {
           {item.overview || "No overview provided."}
         </Text>
 
-        {/* ✅ Member count indicator */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
-          <Ionicons name="people" size={16} color={theme.secondary} />
-          <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
-            {memberCount} {memberCount === 1 ? "member" : "members"}
-          </Text>
+        {/* ✅ Summary Indicators (Members, Tasks, Meetings) */}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 12 }}>
+          {/* Members */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="people" size={16} color={theme.secondary} />
+            <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
+              {memberCount} {memberCount === 1 ? "member" : "members"}
+            </Text>
+          </View>
+          
+          {/* Pending Tasks */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="alert-circle" size={16} color={pendingTasksCount > 0 ? "#F59E0B" : theme.secondary} />
+            <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
+              {pendingTasksCount} {pendingTasksCount === 1 ? "pending task" : "pending tasks"}
+            </Text>
+          </View>
+
+          {/* Upcoming Meetings */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="calendar" size={16} color={upcomingMeetingsCount > 0 ? theme.blue : theme.secondary} />
+            <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
+              {upcomingMeetingsCount} {upcomingMeetingsCount === 1 ? "upcoming meeting" : "upcoming meetings"}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
