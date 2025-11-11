@@ -22,7 +22,7 @@ const { width, height } = Dimensions.get("window");
 const scale = width / 390;
 const verticalScale = height / 844;
 
-const getTheme = (isDark) => ({
+const getTheme = (isDark: boolean) => ({
   bg: isDark ? "#121212" : "#F4F8FB",
   card: isDark ? "#1E1E1E" : "#FFFFFF",
   text: isDark ? "#FFFFFF" : "#000000",
@@ -33,17 +33,17 @@ const getTheme = (isDark) => ({
 
 const now = new Date();
 
-const getRelativeDate = (dateString) => {
+const getRelativeDate = (dateString: string) => {
   const date = new Date(dateString);
   const today = new Date(now.toDateString());
   const targetDate = new Date(date.toDateString());
-  const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Tomorrow";
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-const formatTimeForDisplay = (time24hr) => {
+const formatTimeForDisplay = (time24hr: string) => {
   const [hours, minutes] = time24hr.split(":").map(Number);
   const date = new Date();
   date.setHours(hours, minutes);
@@ -55,7 +55,7 @@ const formatTimeForDisplay = (time24hr) => {
 };
 
 // ---------------- Meeting Item ----------------
-const MeetingItem = ({ item, theme }) => {
+const MeetingItem = ({ item, theme }: { item: any; theme: any }) => {
   const statusColor =
     item.status === "Completed"
       ? "#16A34A"
@@ -83,7 +83,7 @@ const MeetingItem = ({ item, theme }) => {
 };
 
 // ---------------- Task Item ----------------
-const TaskItem = ({ item, theme }) => {
+const TaskItem = ({ item, theme }: { item: any; theme: any }) => {
   const priorityColor =
     item.status === "Pending"
       ? "#E53935"
@@ -126,10 +126,12 @@ export default function DashboardScreen() {
   const isDark = scheme === "dark";
   const theme = getTheme(isDark);
 
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const newsScrollRef = useRef(null);
-  const [selectedNews, setSelectedNews] = useState(null);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const newsScrollRef = useRef<ScrollView>(null);
+  const [selectedNews, setSelectedNews] = useState<any>(null);
 
   // ---------------- PH TIME ----------------
   const getPhilippineTime = () => {
@@ -156,14 +158,56 @@ export default function DashboardScreen() {
         const usersData = snapshot.val();
         if (!usersData) return;
 
-        const foundUser = Object.values(usersData).find((user) => user.email === email);
-        if (foundUser) setCurrentUser(foundUser);
+        const foundUser = Object.values(usersData).find((user: any) => user.email === email);
+        if (foundUser) setCurrentUser({ ...foundUser, id: Object.keys(usersData).find(k => usersData[k] === foundUser) });
       } catch (error) {
         console.log("Error fetching user:", error);
       }
     };
     fetchUser();
   }, []);
+
+  // ---------------- FETCH TASKS & MEETINGS ----------------
+  useEffect(() => {
+  if (!currentUser) return;
+
+  const fetchTasksAndMeetings = async () => {
+    try {
+      const snapshot = await get(child(ref(db), "teams"));
+      const teamsData = snapshot.val();
+      if (!teamsData) return;
+
+      let userTasks: any[] = [];
+      let userMeetings: any[] = [];
+
+      Object.entries(teamsData).forEach(([teamId, team]: [string, any]) => {
+        // Tasks
+        if (team.tasks) {
+          Object.values(team.tasks).forEach((task: any) => {
+            if (task.assignedTo === currentUser.id)
+              userTasks.push({ ...task, teamId }); // attach teamId
+          });
+        }
+
+        // Meetings
+        if (team.meetings) {
+          Object.values(team.meetings).forEach((meet: any) => {
+            if (meet.attendees && meet.attendees[currentUser.id])
+              userMeetings.push({ ...meet, teamId, status: "Upcoming" }); // attach teamId
+          });
+        }
+      });
+
+      setTasks(userTasks);
+      setMeetings(userMeetings);
+    } catch (error) {
+      console.log("Error fetching tasks/meetings:", error);
+    }
+  };
+
+  fetchTasksAndMeetings();
+}, [currentUser]);
+
 
   // ---------------- NEWS DATA ----------------
   const newsData = [
@@ -195,18 +239,18 @@ export default function DashboardScreen() {
   };
 
   // ---------------- NEWS AUTO SCROLL ----------------
-  useEffect(() => {
+    useEffect(() => {
     let scrollValue = 0;
     const interval = setInterval(() => {
       scrollValue += width * 0.7 + 10;
-      if (newsScrollRef.current) {
-        newsScrollRef.current.scrollTo({ x: scrollValue, animated: true });
-      }
+      newsScrollRef.current?.scrollTo({ x: scrollValue, animated: true }); // ✅ optional chaining
+
       if (scrollValue > (newsData.length - 1) * (width * 0.7 + 10)) {
         scrollValue = 0;
-        newsScrollRef.current.scrollTo({ x: 0, animated: false });
+        newsScrollRef.current?.scrollTo({ x: 0, animated: false }); // ✅ optional chaining
       }
     }, 3000);
+
     return () => clearInterval(interval);
   }, []);
 
@@ -237,47 +281,27 @@ export default function DashboardScreen() {
             ))}
           </ScrollView>
 
-          {/* ---------------- TASKS & MEETINGS ---------------- */}
+          {/* Tasks Section */}
           <Text style={[styles.sectionTitle, { color: theme.blue }]}>Tasks</Text>
-          {(() => {
-            const userTasks = [];
-            const userMeetings = [];
-            const fullName = `${currentUser.firstName} ${currentUser.lastName}`;
+         {tasks.length === 0 ? (
+  <Text style={{ color: theme.secondary, marginBottom: 10 }}>No tasks yet.</Text>
+) : (
+  tasks.map((task) => (
+    <TaskItem key={`${task.teamId}_${task.id}`} item={task} theme={theme} />
+  ))
+)}
 
-            Object.values(currentUser.teams || {}).forEach((team) => {
-              (team.tasks || []).forEach((task) => {
-                if (team.members?.some((m) => m.name === fullName)) {
-                  userTasks.push(task);
-                }
-              });
-              (team.meetings || []).forEach((meeting) => {
-                if (team.members?.some((m) => m.name === fullName)) {
-                  userMeetings.push(meeting);
-                }
-              });
-            });
 
-            return (
-              <>
-                {userTasks.length > 0 ? (
-                  userTasks.map((task) => <TaskItem key={task.id} item={task} theme={theme} />)
-                ) : (
-                  <View style={[styles.noDataContainer, { backgroundColor: theme.lightCard }]}>
-                    <Text style={{ color: theme.secondary, fontStyle: "italic" }}>No tasks yet</Text>
-                  </View>
-                )}
+          {/* Meetings Section */}
+          <Text style={[styles.sectionTitle, { color: theme.blue, marginTop: 20 }]}>Meetings</Text>
+         {meetings.length === 0 ? (
+  <Text style={{ color: theme.secondary, marginBottom: 10 }}>No meetings yet.</Text>
+) : (
+  meetings.map((meet) => (
+    <MeetingItem key={`${meet.teamId}_${meet.id}`} item={meet} theme={theme} />
+  ))
+)}
 
-                <Text style={[styles.sectionTitle, { color: theme.blue, marginTop: 20 }]}>Meetings</Text>
-                {userMeetings.length > 0 ? (
-                  userMeetings.map((meeting) => <MeetingItem key={meeting.id} item={meeting} theme={theme} />)
-                ) : (
-                  <View style={[styles.noDataContainer, { backgroundColor: theme.lightCard }]}>
-                    <Text style={{ color: theme.secondary, fontStyle: "italic" }}>No meetings yet</Text>
-                  </View>
-                )}
-              </>
-            );
-          })()}
 
           {/* Modal */}
           <Modal visible={!!selectedNews} transparent animationType="fade" onRequestClose={() => setSelectedNews(null)}>
@@ -349,14 +373,6 @@ const styles = StyleSheet.create({
   taskFooter: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 * verticalScale },
   priorityBadge: { paddingHorizontal: 8 * scale, paddingVertical: 3 * verticalScale, borderRadius: 6 },
   priorityBadgeText: { color: "#FFF", fontSize: 10 * scale, fontWeight: "700" },
-
-  noDataContainer: {
-    borderRadius: 10,
-    padding: 12 * scale,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
 
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
   modalCard: { width: "85%", borderRadius: 16, padding: 20 * scale, elevation: 5 },
