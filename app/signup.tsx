@@ -1,26 +1,29 @@
 import { Picker } from "@react-native-picker/picker";
+import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
-import { child, get, push, ref } from "firebase/database";
+import { push, ref, set } from "firebase/database";
 import React, { useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useColorScheme,
-    View,
+  Alert,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View,
 } from "react-native";
-import bcrypt from "react-native-bcrypt";
+
 import { db } from "../firebase/firebaseConfig";
 
 const LOGO = require("../app/images/recap-logo.png");
 const { width } = Dimensions.get("window");
+
+const WORK_TYPES = ["Professional", "Student", "Business Owner", "Other"];
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -32,46 +35,46 @@ export default function SignupScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [nickname, setNickname] = useState("");
-  const [workType, setWorkType] = useState("Professional");
+  const [workType, setWorkType] = useState(WORK_TYPES[0]);
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!email || !password || !firstName || !lastName || !nickname || !workType) {
+    if (!email || !password || !firstName || !lastName || !nickname) {
       return Alert.alert("Error", "Please fill all fields");
     }
+
+    if (password.length < 6) {
+      return Alert.alert("Error", "Password should be at least 6 characters");
+    }
+
     setLoading(true);
 
     try {
-      // Check if email already exists
-      const snapshot = await get(child(ref(db), "users"));
-      const data = snapshot.val();
-      const emailExists = data
-        ? Object.values(data).some((user: any) => user.email === email)
-        : false;
+      // ✅ Generate a custom unique ID in Realtime Database
+      const uid = push(ref(db, "users")).key as string;
 
-      if (emailExists) {
-        Alert.alert("Error", "Email already exists");
-        return;
-      }
+      // ✅ Hash password using bcryptjs
+      const hashedPassword = bcrypt.hashSync(password, 10);
 
-      // Hash password
-      const salt = bcrypt.genSaltSync(10);
-      const hashedPassword = bcrypt.hashSync(password, salt);
-
-      // Save to DB
-      await push(ref(db, "users"), {
+      // ✅ User data to store in Realtime DB
+      const userData = {
+        id: uid, // keep for historical reads if needed
         email,
-        password: hashedPassword,
         firstName,
         lastName,
         nickname,
         workType,
-      });
+        department: "IT",
+        password: hashedPassword, // bcrypt hash
+      };
+
+      // ✅ Save the user to the database
+      await set(ref(db, `users/${uid}`), userData);
 
       Alert.alert("Success", "Account created successfully!");
       router.replace("/");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Something went wrong");
+      Alert.alert("Error", err.message || "Failed to create account");
     } finally {
       setLoading(false);
     }
@@ -91,7 +94,6 @@ export default function SignupScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Logo */}
         <View style={styles.logoWrapper}>
           <Image source={LOGO} style={styles.logo} resizeMode="contain" />
         </View>
@@ -134,7 +136,7 @@ export default function SignupScreen() {
           />
 
           <TextInput
-            placeholder="Password"
+            placeholder="Password (min 6 characters)"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
             style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
             secureTextEntry
@@ -148,10 +150,9 @@ export default function SignupScreen() {
               onValueChange={(value) => setWorkType(value)}
               style={{ color: theme.text }}
             >
-              <Picker.Item label="Professional" value="Professional" />
-              <Picker.Item label="Student" value="Student" />
-              <Picker.Item label="Business Owner" value="Business Owner" />
-              <Picker.Item label="Other" value="Other" />
+              {WORK_TYPES.map((type) => (
+                <Picker.Item key={type} label={type} value={type} />
+              ))}
             </Picker>
           </View>
 
@@ -160,12 +161,15 @@ export default function SignupScreen() {
             onPress={handleSignup}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>{loading ? "Creating..." : "Sign Up"}</Text>
+            <Text style={styles.buttonText}>
+              {loading ? "Creating Account..." : "Sign Up"}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push("/")} style={{ marginTop: 16 }}>
             <Text style={{ color: theme.text, textAlign: "center" }}>
-              Already have an account? <Text style={{ fontWeight: "bold", color: theme.button }}>Sign In</Text>
+              Already have an account?{" "}
+              <Text style={{ fontWeight: "bold", color: theme.button }}>Sign In</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -174,14 +178,57 @@ export default function SignupScreen() {
   );
 }
 
+// Styles remain exactly the same
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  logoWrapper: { width: width * 0.4, height: width * 0.4, marginBottom: 20 },
-  logo: { width: "100%", height: "100%" },
-  card: { width: "100%", borderRadius: 16, padding: 24, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 6 },
-  title: { fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 24 },
-  input: { borderRadius: 12, padding: 12, marginVertical: 8, fontSize: 16 },
-  pickerContainer: { borderRadius: 12, marginVertical: 8 },
-  button: { borderRadius: 12, paddingVertical: 14, marginTop: 16 },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" },
+  container: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  logoWrapper: {
+    width: width * 0.4,
+    height: width * 0.4,
+    marginBottom: 20,
+  },
+  logo: {
+    width: "100%",
+    height: "100%",
+  },
+  card: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  input: {
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 16,
+  },
+  pickerContainer: {
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  button: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
+    textAlign: "center",
+  },
 });

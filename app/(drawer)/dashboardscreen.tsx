@@ -147,19 +147,26 @@ export default function DashboardScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // ---------------- FETCH USER ----------------
+  // ---------------- FETCH USER (Unified: loggedInUser + uid) ----------------
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const email = await AsyncStorage.getItem("loggedInUserEmail");
-        if (!email) return;
+        const session = await AsyncStorage.getItem("loggedInUser");
+        if (!session) return;
 
-        const snapshot = await get(child(ref(db), "users"));
-        const usersData = snapshot.val();
-        if (!usersData) return;
+        const user = JSON.parse(session);
+        const userId = user.uid || user.id; // fallback if older session exists
+        if (!userId) return;
 
-        const foundUser = Object.values(usersData).find((user: any) => user.email === email);
-        if (foundUser) setCurrentUser({ ...foundUser, id: Object.keys(usersData).find(k => usersData[k] === foundUser) });
+        const sessionUser = { ...user, uid: userId };
+        setCurrentUser(sessionUser);
+
+        // Pull freshest profile from DB
+        const snapshot = await get(child(ref(db), `users/${userId}`));
+        const latestUser = snapshot.val();
+        if (latestUser) {
+          setCurrentUser({ ...sessionUser, ...latestUser, uid: userId });
+        }
       } catch (error) {
         console.log("Error fetching user:", error);
       }
@@ -169,45 +176,44 @@ export default function DashboardScreen() {
 
   // ---------------- FETCH TASKS & MEETINGS ----------------
   useEffect(() => {
-  if (!currentUser) return;
+    if (!currentUser?.uid) return;
 
-  const fetchTasksAndMeetings = async () => {
-    try {
-      const snapshot = await get(child(ref(db), "teams"));
-      const teamsData = snapshot.val();
-      if (!teamsData) return;
+    const fetchTasksAndMeetings = async () => {
+      try {
+        const snapshot = await get(child(ref(db), "teams"));
+        const teamsData = snapshot.val();
+        if (!teamsData) return;
 
-      let userTasks: any[] = [];
-      let userMeetings: any[] = [];
+        const userId = currentUser.uid;
+        const userTasks: any[] = [];
+        const userMeetings: any[] = [];
 
-      Object.entries(teamsData).forEach(([teamId, team]: [string, any]) => {
-        // Tasks
-        if (team.tasks) {
-          Object.values(team.tasks).forEach((task: any) => {
-            if (task.assignedTo === currentUser.id)
-              userTasks.push({ ...task, teamId }); // attach teamId
-          });
-        }
+        Object.entries(teamsData).forEach(([teamId, team]: [string, any]) => {
+          if (team.tasks) {
+            Object.values(team.tasks).forEach((task: any) => {
+              if (task.assignedTo === userId)
+                userTasks.push({ ...task, teamId, id: task.id || `${teamId}_${task.title}` });
+            });
+          }
 
-        // Meetings
-        if (team.meetings) {
-          Object.values(team.meetings).forEach((meet: any) => {
-            if (meet.attendees && meet.attendees[currentUser.id])
-              userMeetings.push({ ...meet, teamId, status: "Upcoming" }); // attach teamId
-          });
-        }
-      });
+          if (team.meetings) {
+            Object.values(team.meetings).forEach((meet: any) => {
+              const attendees = meet.attendees || {};
+              if (attendees[userId])
+                userMeetings.push({ ...meet, teamId, status: "Upcoming", id: meet.id || `${teamId}_${meet.title}` });
+            });
+          }
+        });
 
-      setTasks(userTasks);
-      setMeetings(userMeetings);
-    } catch (error) {
-      console.log("Error fetching tasks/meetings:", error);
-    }
-  };
+        setTasks(userTasks);
+        setMeetings(userMeetings);
+      } catch (error) {
+        console.log("Error fetching tasks/meetings:", error);
+      }
+    };
 
-  fetchTasksAndMeetings();
-}, [currentUser]);
-
+    fetchTasksAndMeetings();
+  }, [currentUser]);
 
   // ---------------- NEWS DATA ----------------
   const newsData = [
@@ -225,11 +231,13 @@ export default function DashboardScreen() {
     if (hour >= 12 && hour < 17) timeOfDay = "Afternoon";
     else if (hour >= 17) timeOfDay = "Evening";
 
+    const displayFirstName = currentUser.firstName || currentUser.nickname || "User";
+
     return (
       <View style={[styles.headerContainer, { backgroundColor: theme.blue }]}>
         <View style={styles.headerTextBox}>
           <Text style={styles.headerGreeting}>
-            Good {timeOfDay}, {currentUser.firstName}!
+            Good {timeOfDay}, {displayFirstName}!
           </Text>
           <Text style={styles.headerSubtitle}>Welcome to ReCap</Text>
         </View>
@@ -239,22 +247,24 @@ export default function DashboardScreen() {
   };
 
   // ---------------- NEWS AUTO SCROLL ----------------
-    useEffect(() => {
+  useEffect(() => {
     let scrollValue = 0;
-    const interval = setInterval(() => {
-      scrollValue += width * 0.7 + 10;
-      newsScrollRef.current?.scrollTo({ x: scrollValue, animated: true }); // ✅ optional chaining
+    const itemWidth = width * 0.7 + 10;
+    const totalContentWidth = newsData.length * itemWidth;
 
-      if (scrollValue > (newsData.length - 1) * (width * 0.7 + 10)) {
+    const interval = setInterval(() => {
+      scrollValue += itemWidth;
+      newsScrollRef.current?.scrollTo({ x: scrollValue, animated: true });
+
+      if (scrollValue >= totalContentWidth) {
         scrollValue = 0;
-        newsScrollRef.current?.scrollTo({ x: 0, animated: false }); // ✅ optional chaining
+        newsScrollRef.current?.scrollTo({ x: 0, animated: false });
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [newsData]);
 
-  // ---------------- RENDER ----------------
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={["top", "bottom"]}>
       {!currentUser ? (
@@ -281,27 +291,25 @@ export default function DashboardScreen() {
             ))}
           </ScrollView>
 
-          {/* Tasks Section */}
+          {/* Tasks */}
           <Text style={[styles.sectionTitle, { color: theme.blue }]}>Tasks</Text>
-         {tasks.length === 0 ? (
-  <Text style={{ color: theme.secondary, marginBottom: 10 }}>No tasks yet.</Text>
-) : (
-  tasks.map((task) => (
-    <TaskItem key={`${task.teamId}_${task.id}`} item={task} theme={theme} />
-  ))
-)}
+          {tasks.length === 0 ? (
+            <Text style={{ color: theme.secondary, marginBottom: 10 }}>No tasks yet.</Text>
+          ) : (
+            tasks.map((task) => (
+              <TaskItem key={`${task.teamId}_${task.id}`} item={task} theme={theme} />
+            ))
+          )}
 
-
-          {/* Meetings Section */}
+          {/* Meetings */}
           <Text style={[styles.sectionTitle, { color: theme.blue, marginTop: 20 }]}>Meetings</Text>
-         {meetings.length === 0 ? (
-  <Text style={{ color: theme.secondary, marginBottom: 10 }}>No meetings yet.</Text>
-) : (
-  meetings.map((meet) => (
-    <MeetingItem key={`${meet.teamId}_${meet.id}`} item={meet} theme={theme} />
-  ))
-)}
-
+          {meetings.length === 0 ? (
+            <Text style={{ color: theme.secondary, marginBottom: 10 }}>No meetings yet.</Text>
+          ) : (
+            meetings.map((meet) => (
+              <MeetingItem key={`${meet.teamId}_${meet.id}`} item={meet} theme={theme} />
+            ))
+          )}
 
           {/* Modal */}
           <Modal visible={!!selectedNews} transparent animationType="fade" onRequestClose={() => setSelectedNews(null)}>
@@ -359,6 +367,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 8 * verticalScale,
   },
   cardTitle: { fontSize: 15 * scale, fontWeight: "600" },
   cardSub: { fontSize: 13 * scale },

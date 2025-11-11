@@ -1,4 +1,3 @@
-// app/(drawer)/teams.tsx
 import { db } from "@/firebase/firebaseConfig";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -72,34 +71,28 @@ export default function TeamsScreen() {
   // ✅ Logged-in user info
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // ✅ Load user using correct UID from database
   useEffect(() => {
     const fetchUser = async () => {
-      const email = await AsyncStorage.getItem("loggedInUserEmail");
-      if (!email) return;
+      const stored = await AsyncStorage.getItem("loggedInUser");
+      if (!stored) return;
 
-      const snap = await get(ref(db, "users"));
-      if (!snap.exists()) return;
+      const user = JSON.parse(stored);
+      const uid = user.uid || user.id;
+      if (!uid) return;
 
-      const users = snap.val();
-      const entries = Object.entries(users);
+      const snap = await get(ref(db, `users/${uid}`));
+      const userObj = snap.exists() ? snap.val() : user;
 
-      const match = entries.find(([uid, u]: any) => u.email === email);
+      const displayName =
+        (userObj.nickname && String(userObj.nickname).trim()) ||
+        `${userObj.firstName ?? ""} ${userObj.lastName ?? ""}`.trim();
 
-      if (match) {
-        const [uid, userObj]: any = match;
-
-        const displayName =
-          (userObj.nickname && String(userObj.nickname).trim()) ||
-          `${userObj.firstName ?? ""} ${userObj.lastName ?? ""}`.trim();
-
-        setCurrentUser({
-          uid,
-          name: displayName || "User",
-          role: userObj.workType || "Leader",
-          department: userObj.department || "IT",
-        });
-      }
+      setCurrentUser({
+        uid,
+        name: displayName || "User",
+        role: userObj.workType || "Member",
+        department: userObj.department || "IT",
+      });
     };
 
     fetchUser();
@@ -111,7 +104,6 @@ export default function TeamsScreen() {
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    // Set up real-time listener for all teams
     const off = onValue(ref(db, "teams"), (snapshot) => {
       const data = snapshot.val() || {};
       const parsed = Object.entries(data)
@@ -125,7 +117,6 @@ export default function TeamsScreen() {
           joinCode: value.joinCode || "",
           creatorUID: value.creatorUID,
         }))
-        // THIS IS THE CRITICAL FILTER: It only keeps teams where your UID exists in the members list.
         .filter((team) => {
           const members = team.members || {};
           return currentUser.uid in members;
@@ -318,9 +309,6 @@ export default function TeamsScreen() {
     );
   };
 
-  // -----------------------------------------------------
-  // ✅ UI
-  // -----------------------------------------------------
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
       {/* HEADER */}

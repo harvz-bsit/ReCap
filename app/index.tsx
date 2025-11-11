@@ -1,4 +1,3 @@
-// LoginScreen.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
@@ -6,6 +5,7 @@ import { child, get, ref } from "firebase/database";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  Dimensions,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -18,9 +18,10 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { db } from "../firebase/firebaseConfig";
+import { db } from "../firebase/firebaseConfig"; // Ensure this path is correct
 
 const LOGO = require("../app/images/recap-logo.png");
+const { width } = Dimensions.get("window");
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // Keyboard listeners
+  // Keyboard listeners (kept original)
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
       setKeyboardHeight(e.endCoordinates.height)
@@ -54,9 +55,11 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      // 1. Fetch ALL users (same approach you used)
       const snapshot = await get(child(ref(db), "users"));
       const data = snapshot.val();
 
+      // 2. Find user by email
       const foundUser = data
         ? Object.entries(data).find(([uid, user]: any) => user.email === email)
         : null;
@@ -68,22 +71,24 @@ export default function LoginScreen() {
 
       const [uid, userObj]: any = foundUser;
 
+      // 3. Compare password (bcryptjs)
       const passwordMatch = bcrypt.compareSync(password, userObj.password);
-
       if (!passwordMatch) {
         Alert.alert("Error", "Invalid email or password");
         return;
       }
 
-      // ✅ STORE FULL USER DATA FOR TEAMS SYSTEM
+      // 4. ✅ Save CONSISTENT session data under "loggedInUser"
       await AsyncStorage.setItem(
         "loggedInUser",
         JSON.stringify({
-          uid,
+          uid, // <-- canonical key everywhere
           email: userObj.email,
           firstName: userObj.firstName,
           lastName: userObj.lastName,
-          workType: userObj.workType || "Member",
+          nickname: userObj.nickname,
+          workType: userObj.workType,
+          department: userObj.department || "IT",
         })
       );
 
@@ -118,26 +123,22 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View
-  style={{
-    backgroundColor: "#1976D2",
-    padding: 11,
-    borderRadius: 25,   // ✅ rounded square
-    marginBottom: 30,
-    marginRight: 20,
-    marginLeft: 20,
-    marginTop: 20,
-    justifyContent: 'center',
-
-    width: 250,
-    height: 200,        // ✅ expanded width
-    alignItems: "center",
-
-
-  }}
->
-  <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-</View>
-
+          style={{
+            backgroundColor: "#1976D2",
+            padding: 11,
+            borderRadius: 25,
+            marginBottom: 30,
+            marginRight: 20,
+            marginLeft: 20,
+            marginTop: 20,
+            justifyContent: "center",
+            width: width * 0.65,
+            height: width * 0.5,
+            alignItems: "center",
+          }}
+        >
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+        </View>
 
         <View style={[styles.card, { backgroundColor: theme.card }]}>
           <Text style={[styles.title, { color: theme.text }]}>Login</Text>
