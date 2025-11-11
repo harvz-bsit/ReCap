@@ -40,10 +40,11 @@ type Team = {
   tasks: Record<string, TeamTask> | TeamTask[];
   meetings: Record<string, any> | any[];
   joinCode?: string;
+  creatorUID?: string;
 };
 
 function generateJoinCode(len = 6) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid confusing chars
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
   for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
   return out;
@@ -71,7 +72,7 @@ export default function TeamsScreen() {
   // ✅ Logged-in user info
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Load logged-in user from Firebase by email
+  // ✅ Load user using correct UID from database
   useEffect(() => {
     const fetchUser = async () => {
       const email = await AsyncStorage.getItem("loggedInUserEmail");
@@ -81,18 +82,22 @@ export default function TeamsScreen() {
       if (!snap.exists()) return;
 
       const users = snap.val();
-      const found = Object.values(users).find((u: any) => u.email === email);
+      const entries = Object.entries(users);
 
-      if (found) {
+      const match = entries.find(([uid, u]: any) => u.email === email);
+
+      if (match) {
+        const [uid, userObj]: any = match;
+
         const displayName =
-          (found.nickname && String(found.nickname).trim()) ||
-          `${found.firstName ?? ""} ${found.lastName ?? ""}`.trim();
+          (userObj.nickname && String(userObj.nickname).trim()) ||
+          `${userObj.firstName ?? ""} ${userObj.lastName ?? ""}`.trim();
 
         setCurrentUser({
-          uid: found.id, // assuming your users/<uid>/id holds the UID
+          uid,
           name: displayName || "User",
-          role: found.workType || "Leader",
-          department: found.department || "IT",
+          role: userObj.workType || "Leader",
+          department: userObj.department || "IT",
         });
       }
     };
@@ -100,27 +105,37 @@ export default function TeamsScreen() {
     fetchUser();
   }, []);
 
-  // ✅ Firebase teams only — NO MOCK TEAMS ANYMORE
+  // ✅ Firebase teams - FILTERED by current user membership
   const [teams, setTeams] = useState<Team[]>([]);
 
   useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    // Set up real-time listener for all teams
     const off = onValue(ref(db, "teams"), (snapshot) => {
       const data = snapshot.val() || {};
-      const parsed = Object.entries(data).map(([key, value]: any) => ({
-        id: key,
-        name: value.name,
-        overview: value.overview || "",
-        members: value.members || {},
-        tasks: value.tasks || {},
-        meetings: value.meetings || {},
-        joinCode: value.joinCode || "",
-      })) as Team[];
+      const parsed = Object.entries(data)
+        .map(([key, value]: any) => ({
+          id: key,
+          name: value.name,
+          overview: value.overview || "",
+          members: value.members || {},
+          tasks: value.tasks || {},
+          meetings: value.meetings || {},
+          joinCode: value.joinCode || "",
+          creatorUID: value.creatorUID,
+        }))
+        // THIS IS THE CRITICAL FILTER: It only keeps teams where your UID exists in the members list.
+        .filter((team) => {
+          const members = team.members || {};
+          return currentUser.uid in members;
+        }) as Team[];
 
       setTeams(parsed);
     });
 
     return () => off();
-  }, []);
+  }, [currentUser?.uid]);
 
   // -----------------------------------------------------
   // ✅ CREATE TEAM
@@ -152,6 +167,7 @@ export default function TeamsScreen() {
       const newTeam = {
         name: newTeamName.trim(),
         overview: newTeamOverview.trim() || "",
+        creatorUID: currentUser.uid,
         members: { [currentUser.uid]: leader },
         tasks: {},
         meetings: {},
@@ -166,7 +182,6 @@ export default function TeamsScreen() {
       setShowCreateModal(false);
       setAddModalVisible(false);
 
-      // Optional: show code to the creator
       Alert.alert("Team Created", `Your team is live!\nJoin Code: ${joinCode}`);
 
       router.push(`./teams/${newRef.key}`);
@@ -177,7 +192,7 @@ export default function TeamsScreen() {
   };
 
   // -----------------------------------------------------
-  // ✅ JOIN TEAM (by joinCode; fallback to direct team ID)
+  // ✅ JOIN TEAM
   // -----------------------------------------------------
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState("");
@@ -192,7 +207,6 @@ export default function TeamsScreen() {
     }
 
     try {
-      // First: try find by joinCode
       const teamsSnap = await get(ref(db, "teams"));
       let teamId: string | null = null;
       let teamData: any = null;
@@ -208,7 +222,6 @@ export default function TeamsScreen() {
         }
       }
 
-      // Fallback: if not found by joinCode, treat input as a direct team ID
       if (!teamId) {
         const byIdSnap = await get(ref(db, `teams/${code}`));
         if (byIdSnap.exists()) {
@@ -222,11 +235,19 @@ export default function TeamsScreen() {
         return;
       }
 
+      // ✅ Check if already a member
       const members = teamData.members || {};
-      // prevent duplicate
+      if (currentUser.uid in members) {
+        Alert.alert("Already a Member", `You're already in ${teamData.name}`);
+        setJoinCode("");
+        setShowJoinModal(false);
+        return;
+      }
+
+      // ✅ Add user to members
       members[currentUser.uid] = {
         name: currentUser.name,
-        role: members[currentUser.uid]?.role || "Member",
+        role: "Member",
         department: currentUser.department,
       };
 
@@ -243,9 +264,11 @@ export default function TeamsScreen() {
   };
 
   // -----------------------------------------------------
-  // ✅ Render team card (UI unchanged)
+  // ✅ Render team card with member count
   // -----------------------------------------------------
   const renderTeam = ({ item }: { item: Team }) => {
+    const memberCount = Object.keys(item.members || {}).length;
+
     return (
       <TouchableOpacity
         key={item.id}
@@ -256,7 +279,25 @@ export default function TeamsScreen() {
         onPress={() => router.push(`./teams/${item.id}`)}
       >
         <View style={styles.teamHeader}>
-          <Text style={[styles.teamName, { color: theme.text }]}>{item.name}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={[styles.teamName, { color: theme.text }]}>{item.name}</Text>
+
+            {item.creatorUID === currentUser?.uid && (
+              <View
+                style={{
+                  backgroundColor: theme.accent,
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 8,
+                  marginLeft: 8,
+                }}
+              >
+                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
+                  Creator
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         <Text
@@ -265,6 +306,14 @@ export default function TeamsScreen() {
         >
           {item.overview || "No overview provided."}
         </Text>
+
+        {/* ✅ Member count indicator */}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+          <Ionicons name="people" size={16} color={theme.secondary} />
+          <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
+            {memberCount} {memberCount === 1 ? "member" : "members"}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -274,7 +323,6 @@ export default function TeamsScreen() {
   // -----------------------------------------------------
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
-
       {/* HEADER */}
       <View style={styles.headerRow}>
         <Text style={[styles.header, { color: theme.text }]}>Teams Overview</Text>
@@ -294,9 +342,15 @@ export default function TeamsScreen() {
         renderItem={renderTeam}
         contentContainerStyle={{ padding: 16, paddingBottom: 30 }}
         ListEmptyComponent={
-          <Text style={[styles.noItemsText, { color: theme.secondary }]}>
-            No teams yet!
-          </Text>
+          <View style={{ alignItems: "center", marginTop: 40 }}>
+            <Ionicons name="people-outline" size={64} color={theme.secondary} />
+            <Text style={[styles.noItemsText, { color: theme.secondary, marginTop: 16 }]}>
+              No teams yet!
+            </Text>
+            <Text style={{ color: theme.secondary, fontSize: 14, marginTop: 8 }}>
+              Create or join a team to get started
+            </Text>
+          </View>
         }
       />
 
@@ -385,7 +439,11 @@ export default function TeamsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setShowCreateModal(false)}
+              onPress={() => {
+                setShowCreateModal(false);
+                setNewTeamName("");
+                setNewTeamOverview("");
+              }}
               style={[styles.cancelBtn, { borderColor: theme.accent }]}
             >
               <Text style={[styles.cancelText, { color: theme.accent }]}>
@@ -407,7 +465,7 @@ export default function TeamsScreen() {
             <TextInput
               placeholder="Enter join code"
               placeholderTextColor={theme.secondary}
-              autoCapitalize="none"
+              autoCapitalize="characters"
               value={joinCode}
               onChangeText={setJoinCode}
               style={[styles.input, { borderColor: theme.border, color: theme.text }]}
@@ -421,7 +479,10 @@ export default function TeamsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setShowJoinModal(false)}
+              onPress={() => {
+                setShowJoinModal(false);
+                setJoinCode("");
+              }}
               style={[styles.cancelBtn, { borderColor: theme.accent }]}
             >
               <Text style={[styles.cancelText, { color: theme.accent }]}>
@@ -435,7 +496,7 @@ export default function TeamsScreen() {
   );
 }
 
-/* --------------------------- STYLES (UNCHANGED) --------------------------- */
+/* --------------------------- STYLES --------------------------- */
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   headerRow: {
@@ -459,7 +520,7 @@ const styles = StyleSheet.create({
   },
   teamName: { fontSize: 18, fontWeight: "700" },
   overview: { fontSize: 14, marginTop: 4 },
-  noItemsText: { textAlign: "center", marginTop: 30 },
+  noItemsText: { textAlign: "center", marginTop: 30, fontSize: 16, fontWeight: "600" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

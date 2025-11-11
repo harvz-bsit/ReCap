@@ -117,7 +117,27 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+        <View
+  style={{
+    backgroundColor: "#1976D2",
+    padding: 11,
+    borderRadius: 25,   // ✅ rounded square
+    marginBottom: 30,
+    marginRight: 20,
+    marginLeft: 20,
+    marginTop: 20,
+    justifyContent: 'center',
+
+    width: 250,
+    height: 200,        // ✅ expanded width
+    alignItems: "center",
+
+
+  }}
+>
+  <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+</View>
+
 
         <View style={[styles.card, { backgroundColor: theme.card }]}>
           <Text style={[styles.title, { color: theme.text }]}>Login</Text>
@@ -182,9 +202,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   logo: {
-    width: 120,
+    width: 150,
     height: 120,
-    marginBottom: 24,
   },
   card: {
     width: "100%",

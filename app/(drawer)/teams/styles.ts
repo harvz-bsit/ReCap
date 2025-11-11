@@ -1,4 +1,5 @@
-import { StyleSheet, Platform } from "react-native";
+// styles.ts
+import { Platform, StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
   safeArea: { flex: 1 },
