@@ -1,4 +1,3 @@
-// app/(drawer)/teams/teamdetails.tsx
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
@@ -290,7 +289,7 @@ export default function TeamDetailsScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
       {/* HEADER */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { paddingHorizontal: 16, paddingTop: 12, marginBottom: 15 }]}>
         <TouchableOpacity
           onPress={() => router.push("/(drawer)/teams")}
           style={styles.backButton}
@@ -404,109 +403,115 @@ export default function TeamDetailsScreen() {
         <View style={{ height: 30 }} />
       </ScrollView>
 
-      {/* MEMBERS / INFO MODAL */}
-      <Modal visible={showMembers} transparent={false} animationType="fade">
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: theme.bg, padding: 16 }]}
-        >
+      {/* MEMBERS / INFO MODAL (Floating Modal) */}
+      <Modal visible={showMembers} transparent animationType="fade">
+        <View style={styles.modalOverlayCenter}>
           <View
             style={[
-              styles.modalHeader,
-              { marginBottom: 16, paddingRight: 16, paddingLeft: 16 },
+              styles.modalContentCenter,
+              { backgroundColor: theme.card, padding: 0, width: "90%", maxHeight: "80%", borderRadius: 15 }, // Floating card styles
             ]}
           >
-            <Text
+            {/* MODAL HEADER */}
+            <View
               style={[
-                styles.modalTitle,
-                { fontSize: 22, color: theme.text, marginLeft: -5 },
+                styles.modalHeader,
+                { padding: 16, borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
               ]}
             >
-              Team Info
-            </Text>
-            <TouchableOpacity onPress={() => setShowMembers(false)}>
-              <Ionicons name="close-circle-outline" size={26} color={theme.blue} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={{ paddingHorizontal: 16 }}>
-            {/* JOIN CODE (Creator Only) */}
-            {isCreator && !!team.joinCode && (
-              <TouchableOpacity
-                onPress={copyJoinCode}
-                activeOpacity={0.8}
+              <Text
                 style={[
-                  styles.memberCard,
+                  styles.modalTitle,
+                  { fontSize: 20, fontWeight: "700", color: theme.text },
+                ]}
+              >
+                Team Info
+              </Text>
+              <TouchableOpacity onPress={() => setShowMembers(false)}>
+                <Ionicons name="close-circle-outline" size={26} color={theme.blue} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ padding: 16 }}>
+              {/* JOIN CODE (Creator Only) */}
+              {isCreator && !!team.joinCode && (
+                <TouchableOpacity
+                  onPress={copyJoinCode}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.memberCard,
+                    {
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      backgroundColor: theme.bg,
+                      padding: 14,
+                      marginBottom: 12,
+                      alignItems: "flex-start",
+                    },
+                  ]}
+                >
+                  <View>
+                    <Text style={{ fontWeight: "700", color: theme.text }}>Join Code</Text>
+                    <Text selectable style={{ color: theme.text, marginTop: 4 }}>
+                      {team.joinCode}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* MEMBERS LIST */}
+              <Text
+                style={[
+                  styles.modalTitle,
+                  { color: theme.text, marginTop: 10, marginBottom: 5 },
+                ]}
+              >
+                Members
+              </Text>
+              {team.members.map((member: Member, idx: number) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.memberCard,
+                    { backgroundColor: theme.bg, paddingVertical: 12 },
+                  ]}
+                >
+                  <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
+                  <View>
+                    <Text style={[styles.memberName, { color: theme.text }]}>
+                      {member.name}
+                    </Text>
+                    <Text style={[styles.memberRole, { color: theme.secondary }]}>
+                      {member.role} • {member.department}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                style={[
+                  styles.leaveTeamButton,
                   {
-                    borderWidth: 1,
-                    borderColor: theme.border,
-                    backgroundColor: theme.card,
-                    padding: 14,
-                    marginBottom: 12,
-                    alignItems: "flex-start",
+                    borderColor: theme.danger,
+                    backgroundColor: theme.dangerBg,
+                    marginTop: 20,
+                    marginBottom: 20, // Reduced margin for floating modal
                   },
                 ]}
+                onPress={() => setShowLeaveConfirm(true)}
               >
-                <View>
-                  <Text style={{ fontWeight: "700", color: theme.text }}>Join Code</Text>
-                  <Text selectable style={{ color: theme.text, marginTop: 4 }}>
-                    {team.joinCode}
-                  </Text>
-                </View>
+                <Ionicons name="log-out-outline" size={22} color={theme.danger} />
+                <Text style={[styles.leaveTeamButtonText, { color: theme.danger }]}>
+                  {isCreator && team?.rawMembers
+                    ? Object.keys(team.rawMembers).length <= 1
+                      ? "Delete Team"
+                      : "Leave Team"
+                    : "Leave Team"}
+                </Text>
               </TouchableOpacity>
-            )}
-
-            {/* MEMBERS LIST */}
-            <Text
-              style={[
-                styles.modalTitle,
-                { color: theme.text, marginTop: 10, marginBottom: 5 },
-              ]}
-            >
-              Members
-            </Text>
-            {team.members.map((member: Member, idx: number) => (
-              <View
-                key={idx}
-                style={[
-                  styles.memberCard,
-                  { backgroundColor: theme.card, paddingVertical: 12 },
-                ]}
-              >
-                <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
-                <View>
-                  <Text style={[styles.memberName, { color: theme.text }]}>
-                    {member.name}
-                  </Text>
-                  <Text style={[styles.memberRole, { color: theme.secondary }]}>
-                    {member.role} • {member.department}
-                  </Text>
-                </View>
-              </View>
-            ))}
-
-            <TouchableOpacity
-              style={[
-                styles.leaveTeamButton,
-                {
-                  borderColor: theme.danger,
-                  backgroundColor: theme.dangerBg,
-                  marginTop: 20,
-                  marginBottom: 50,
-                },
-              ]}
-              onPress={() => setShowLeaveConfirm(true)}
-            >
-              <Ionicons name="log-out-outline" size={22} color={theme.danger} />
-              <Text style={[styles.leaveTeamButtonText, { color: theme.danger }]}>
-                {isCreator && team?.rawMembers
-                  ? Object.keys(team.rawMembers).length <= 1
-                    ? "Delete Team"
-                    : "Leave Team"
-                  : "Leave Team"}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </SafeAreaView>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {/* LEAVE / DELETE CONFIRM */}

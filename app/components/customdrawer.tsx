@@ -1,8 +1,10 @@
+// FULL FINAL CustomDrawer.tsx — with Delete Account (Option A: auto-delete creator’s teams)
+
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { child, get, ref, set, update } from "firebase/database";
+import { child, get, ref, remove, set, update } from "firebase/database";
 import React, { useEffect, useState } from "react";
 import {
   Image,
@@ -31,8 +33,8 @@ const DrawerItem = ({ label, labelStyle, style, onPress, icon }) => (
   </TouchableOpacity>
 );
 
-/* Theme */
-const getTheme = (isDark) => ({
+/* THEME */
+const getTheme = (isDark: boolean) => ({
   bg: isDark ? "#121212" : "#F4F8FB",
   text: isDark ? "#FFFFFF" : "#000000",
   blue: "#1976D2",
@@ -46,113 +48,143 @@ const getTheme = (isDark) => ({
   cancelBtn: isDark ? "#333333" : "#E0E0E0",
 });
 
-/* ✅ Highlight active screen */
-const isRouteActive = (props, routeName) => {
+/* ACTIVE HIGHLIGHT */
+const isRouteActive = (props: any, routeName: string) => {
   const currentRoute = props?.state?.routeNames?.[props?.state?.index];
   return routeName === currentRoute;
 };
 
-/* ✅ Sync updated name to all teams */
-const syncUserNameToTeams = async (userData) => {
+/* ✅ Sync full name to teams (NOT nickname) */
+const syncUserNameToTeams = async (userData: any) => {
   try {
-    const teamsSnap = await get(child(ref(db), "teams"));
-    const teams = teamsSnap.val();
+    const snap = await get(child(ref(db), "teams"));
+    const teams = snap.val();
     if (!teams) return;
 
     Object.keys(teams).forEach((teamId) => {
-      const team = teams[teamId];
-
-      if (team.members && team.members[userData.uid]) {
+      if (teams[teamId].members?.[userData.uid]) {
         set(ref(db, `teams/${teamId}/members/${userData.uid}`), {
-          name: `${userData.firstName} ${userData.lastName}`.trim(),
-          role: userData.workType,
-          department: userData.department,
+          name: `${userData.firstName ?? ""} ${userData.lastName ?? ""}`.trim(),
+          role: userData.workType || "Member",
+          department: userData.department || "IT",
         });
       }
     });
-  } catch (err) {
-    console.log("Sync to teams error:", err);
+  } catch (e) {
+    console.log("Sync error:", e);
   }
 };
 
-export default function CustomDrawer(props) {
+export default function CustomDrawer(props: any) {
   const router = useRouter();
   const scheme = useColorScheme();
-  const isDark = scheme === "dark";
-  const theme = getTheme(isDark);
+  const theme = getTheme(scheme === "dark");
   const insets = useSafeAreaInsets();
 
-  // STATES
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [nickname, setNickname] = useState("User");
-  const [profileImage, setProfileImage] = useState(null);
   const [tempNickname, setTempNickname] = useState("");
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editingNickname, setEditingNickname] = useState(false);
+  const [showConfirmLogout, setShowConfirmLogout] = useState(false);
+
+  // NEW: delete account modal + progress
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  /* ✅ Fetch logged in user */
+  /* ✅ Load User */
   useEffect(() => {
-    const loadUser = async () => {
+    (async () => {
       try {
-        const session = await AsyncStorage.getItem("loggedInUser");
-        if (!session) return;
+        const local = await AsyncStorage.getItem("loggedInUser");
+        if (!local) return;
 
-        const data = JSON.parse(session);
-        const uid = data.uid || data.id;
-        const profileSnap = await get(child(ref(db), `users/${uid}`));
-        const profile = profileSnap.exists() ? profileSnap.val() : data;
+        const base = JSON.parse(local);
+        const uid = base.uid || base.id; // tolerate both shapes
 
-        const merged = { ...data, ...profile, uid };
+        const snap = await get(child(ref(db), `users/${uid}`));
+        const profile = snap.exists() ? snap.val() : base;
+
+        const merged = { ...base, ...profile, uid };
+
         setCurrentUser(merged);
-        setNickname(`${merged.firstName ?? ""} ${merged.lastName ?? ""}`.trim() || merged.nickname || "User");
+        setNickname(merged.nickname || "User");
 
-        /* ✅ Sync to teams */
-        syncUserNameToTeams({
-          uid,
-          firstName: merged.firstName,
-          lastName: merged.lastName,
-          workType: merged.workType,
-          department: merged.department,
-        });
+        syncUserNameToTeams(merged);
       } catch (e) {
-        console.log("Load user error:", e);
+        console.log("Load error:", e);
       }
-    };
-
-    loadUser();
+    })();
   }, []);
 
-  /* Image Picker */
+  /* ✅ Pick Image */
   const pickImageFromGallery = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
 
-    if (!result.canceled) setProfileImage(result.assets[0].uri);
+    if (!res.canceled) setProfileImage(res.assets[0].uri);
   };
-
-  const handleRemovePhoto = () => setProfileImage(null);
-
-  const getActiveColor = (name) =>
-    isRouteActive(props, name) ? theme.blue : theme.darkBlue;
-
-  const getActiveBG = (name) =>
-    isRouteActive(props, name) ? theme.activeBG : "transparent";
 
   const emailToShow = currentUser?.email || "Loading...";
 
   /* ✅ Logout */
   const confirmLogout = async () => {
     await AsyncStorage.removeItem("loggedInUser");
-    setShowConfirm(false);
+    await AsyncStorage.removeItem("loggedInUserEmail");
+    setShowConfirmLogout(false);
     router.replace("/");
+  };
+
+  /* ✅ Delete Account (Option A: auto-delete creator’s teams) */
+  const permanentlyDeleteAccount = async () => {
+    if (!currentUser?.uid) return;
+    try {
+      setIsDeleting(true);
+
+      // 1) Load all teams
+      const tSnap = await get(child(ref(db), "teams"));
+      const teams = tSnap.val() || {};
+
+      const uid = currentUser.uid;
+
+      // 2) Iterate over teams
+      const teamIds = Object.keys(teams);
+      for (const teamId of teamIds) {
+        const team = teams[teamId];
+        if (!team) continue;
+
+        if (team.creatorUID === uid) {
+          // ✅ Creator: delete entire team
+          await remove(ref(db, `teams/${teamId}`));
+        } else if (team.members && team.members[uid]) {
+          // ✅ Member: remove user from members
+          await remove(ref(db, `teams/${teamId}/members/${uid}`));
+        }
+      }
+
+      // 3) Remove user profile
+      await remove(ref(db, `users/${uid}`));
+
+      // 4) Local cleanup & redirect
+      await AsyncStorage.removeItem("loggedInUser");
+      await AsyncStorage.removeItem("loggedInUserEmail");
+
+      setShowDeleteModal(false);
+      setShowProfileModal(false);
+      setIsDeleting(false);
+
+      router.replace("/");
+    } catch (e) {
+      console.log("Delete account error:", e);
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -163,106 +195,68 @@ export default function CustomDrawer(props) {
         paddingTop: insets.top,
         paddingBottom: insets.bottom,
       }}
-      edges={["top", "bottom"]}
     >
       <DrawerContentScrollView
         {...props}
         style={{ backgroundColor: theme.bg }}
         contentContainerStyle={[styles.scrollContent]}
       >
-        {/* PROFILE SECTION */}
+        {/* ✅ PROFILE HEADER */}
         <TouchableOpacity
           style={[styles.profileSection, { borderBottomColor: theme.border }]}
           onPress={() => setShowProfileModal(true)}
         >
           {profileImage ? (
-            <Image
-              source={{ uri: profileImage }}
-              style={{ width: 55, height: 55, borderRadius: 28 }}
-            />
+            <Image source={{ uri: profileImage }} style={{ width: 55, height: 55, borderRadius: 28 }} />
           ) : (
             <Ionicons name="person-circle-outline" size={50} color={theme.blue} />
           )}
 
+          {/* ✅ Always show full name */}
           <Text style={[styles.userName, { color: theme.text, marginTop: 12 }]}>
-            {nickname}
+            {currentUser?.firstName} {currentUser?.lastName}
           </Text>
 
-          <Text style={[styles.userEmail, { color: theme.darkBlue }]}>
-            {emailToShow}
-          </Text>
+          <Text style={[styles.userEmail, { color: theme.darkBlue }]}>{emailToShow}</Text>
         </TouchableOpacity>
 
-        {/* MENU */}
+        {/* ✅ MENU */}
         <View style={styles.menuSection}>
           <DrawerItem
             label="Home"
-            icon={
-              <Ionicons
-                name="home-outline"
-                size={22}
-                color={getActiveColor("dashboardscreen")}
-                style={styles.icon}
-              />
-            }
-            labelStyle={{ color: getActiveColor("dashboardscreen") }}
-            style={{
-              backgroundColor: getActiveBG("dashboardscreen"),
-              borderRadius: 8,
-            }}
+            icon={<Ionicons name="home-outline" size={22} color={theme.blue} style={styles.icon} />}
+            labelStyle={{ color: theme.blue }}
             onPress={() => props.navigation.navigate("dashboardscreen")}
           />
 
           <DrawerItem
             label="Teams"
-            icon={
-              <Ionicons
-                name="people-outline"
-                size={22}
-                color={getActiveColor("teams")}
-                style={styles.icon}
-              />
-            }
-            labelStyle={{ color: getActiveColor("teams") }}
-            style={{
-              backgroundColor: getActiveBG("teams"),
-              borderRadius: 8,
-            }}
+            icon={<Ionicons name="people-outline" size={22} color={theme.blue} style={styles.icon} />}
+            labelStyle={{ color: theme.blue }}
             onPress={() => props.navigation.navigate("teams")}
           />
 
           <DrawerItem
             label="Record"
-            icon={
-              <Ionicons
-                name="mic-outline"
-                size={22}
-                color={getActiveColor("recording")}
-                style={styles.icon}
-              />
-            }
-            labelStyle={{ color: getActiveColor("recording") }}
-            style={{
-              backgroundColor: getActiveBG("recording"),
-              borderRadius: 8,
-            }}
+            icon={<Ionicons name="mic-outline" size={22} color={theme.blue} style={styles.icon} />}
+            labelStyle={{ color: theme.blue }}
             onPress={() => props.navigation.navigate("recording")}
           />
         </View>
 
         <View style={styles.spacer} />
 
-        {/* LOGOUT */}
+        {/* ✅ LOGOUT */}
         <TouchableOpacity
           style={[styles.logoutSection, { borderTopColor: theme.border }]}
-          onPress={() => setShowConfirm(true)}
+          onPress={() => setShowConfirmLogout(true)}
         >
           <Ionicons name="log-out-outline" size={22} color={theme.red} />
           <Text style={[styles.logoutText, { color: theme.red }]}>Logout</Text>
         </TouchableOpacity>
       </DrawerContentScrollView>
 
-      {/* PROFILE MODAL */}
+      {/* ✅ PROFILE MODAL */}
       <Modal visible={showProfileModal} transparent animationType="fade">
         <View style={[styles.modalOverlay, { backgroundColor: theme.modalOverlay }]}>
           <View style={[styles.profileModalBox, { backgroundColor: theme.modalBG }]}>
@@ -281,64 +275,49 @@ export default function CustomDrawer(props) {
               )}
 
               <TouchableOpacity onPress={pickImageFromGallery}>
-                <Text style={[styles.changePhotoText, { color: theme.blue }]}>
-                  Change Profile Picture
-                </Text>
+                <Text style={[styles.changePhotoText, { color: theme.blue }]}>Change Profile Picture</Text>
               </TouchableOpacity>
 
               {profileImage && (
-                <TouchableOpacity onPress={handleRemovePhoto}>
-                  <Text
-                    style={[
-                      styles.changePhotoText,
-                      { color: "#FF4500", marginTop: 4 },
-                    ]}
-                  >
+                <TouchableOpacity onPress={() => setProfileImage(null)}>
+                  <Text style={[styles.changePhotoText, { color: "#FF4500", marginTop: 4 }]}>
                     Remove Photo
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
 
+            {/* FULL NAME */}
             <Text style={[styles.profileName, { color: theme.text }]}>
-              {nickname}
+              {currentUser?.firstName} {currentUser?.lastName}
             </Text>
-            <Text style={[styles.profileEmail, { color: theme.darkBlue }]}>
-              {emailToShow}
-            </Text>
+            <Text style={[styles.profileEmail, { color: theme.darkBlue }]}>{emailToShow}</Text>
 
-            {/* EDIT NICKNAME */}
+            {/* ✅ EDIT NICKNAME */}
             <TouchableOpacity
               style={[styles.profileButtonContainer, { borderColor: theme.blue }]}
               onPress={() => {
-                setEditingNickname(true);
                 setTempNickname(nickname);
+                setEditingNickname(true);
               }}
             >
               <Ionicons name="create-outline" size={20} color={theme.blue} />
-              <Text style={[styles.profileButtonText, { color: theme.blue }]}>
-                Edit Nickname
-              </Text>
+              <Text style={[styles.profileButtonText, { color: theme.blue }]}>Edit Nickname</Text>
             </TouchableOpacity>
 
-            {/* DELETE ACCOUNT (UI kept, no backend delete in this snippet) */}
+            {/* ✅ DELETE ACCOUNT BUTTON */}
             <TouchableOpacity
-              style={[
-                styles.profileButtonContainer,
-                { borderColor: "#FF4500", backgroundColor: "transparent" },
-              ]}
+              style={[styles.profileButtonContainer, { borderColor: "#FF4500" }]}
               onPress={() => setShowDeleteModal(true)}
             >
               <Ionicons name="trash-outline" size={20} color="#FF4500" />
-              <Text style={[styles.profileButtonText, { color: "#FF4500" }]}>
-                Delete Account
-              </Text>
+              <Text style={[styles.profileButtonText, { color: "#FF4500" }]}>Delete Account</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* EDIT NICKNAME MODAL */}
+      {/* ✅ EDIT NICKNAME MODAL */}
       <Modal visible={editingNickname} transparent animationType="fade">
         <View style={[styles.modalOverlay, { backgroundColor: theme.modalOverlay }]}>
           <View style={[styles.modalBox, { backgroundColor: theme.modalBG }]}>
@@ -347,10 +326,7 @@ export default function CustomDrawer(props) {
             <TextInput
               value={tempNickname}
               onChangeText={setTempNickname}
-              style={[
-                styles.nicknameInput,
-                { borderColor: theme.border, color: theme.text },
-              ]}
+              style={[styles.nicknameInput, { borderColor: theme.border, color: theme.text }]}
             />
 
             <View style={styles.modalButtons}>
@@ -369,39 +345,18 @@ export default function CustomDrawer(props) {
                   setNickname(tempNickname);
                   setEditingNickname(false);
 
-                  const [firstName, ...rest] = tempNickname.split(" ");
-                  const lastName = rest.join(" ");
-
-                  // ✅ Update Firebase user profile
-                  await update(ref(db, `users/${currentUser.uid}`), {
-                    firstName,
-                    lastName,
-                  });
-
-                  // ✅ Update local session
                   const updated = {
                     ...currentUser,
-                    firstName,
-                    lastName,
+                    nickname: tempNickname,
                   };
-                  await AsyncStorage.setItem("loggedInUser", JSON.stringify({
-                    uid: updated.uid,
-                    email: updated.email,
-                    firstName: updated.firstName,
-                    lastName: updated.lastName,
-                    nickname: updated.nickname,
-                    workType: updated.workType,
-                    department: updated.department,
-                  }));
 
-                  // ✅ Sync to all teams
-                  syncUserNameToTeams({
-                    uid: updated.uid,
-                    firstName,
-                    lastName,
-                    workType: updated.workType,
-                    department: updated.department,
+                  await update(ref(db, `users/${currentUser.uid}`), {
+                    nickname: tempNickname,
                   });
+
+                  await AsyncStorage.setItem("loggedInUser", JSON.stringify(updated));
+
+                  setCurrentUser(updated);
                 }}
               >
                 <Text style={{ color: "#fff" }}>Save</Text>
@@ -411,22 +366,18 @@ export default function CustomDrawer(props) {
         </View>
       </Modal>
 
-      {/* LOGOUT MODAL */}
-      <Modal visible={showConfirm} transparent animationType="fade">
+      {/* ✅ LOGOUT CONFIRM */}
+      <Modal visible={showConfirmLogout} transparent animationType="fade">
         <View style={[styles.modalOverlay, { backgroundColor: theme.modalOverlay }]}>
           <View style={[styles.modalBox, { backgroundColor: theme.modalBG }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              Confirm Logout
-            </Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm Logout</Text>
 
-            <Text style={[styles.modalText, { color: theme.modalText }]}>
-              Do you want to logout?
-            </Text>
+            <Text style={[styles.modalText, { color: theme.modalText }]}>Do you want to logout?</Text>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.btn, { backgroundColor: theme.cancelBtn }]}
-                onPress={() => setShowConfirm(false)}
+                onPress={() => setShowConfirmLogout(false)}
               >
                 <Text style={{ color: theme.text }}>Cancel</Text>
               </TouchableOpacity>
@@ -435,7 +386,39 @@ export default function CustomDrawer(props) {
                 style={[styles.btn, { backgroundColor: theme.red }]}
                 onPress={confirmLogout}
               >
-                <Text style={[styles.logoutBtnText]}>Logout</Text>
+                <Text style={styles.logoutBtnText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ✅ DELETE ACCOUNT CONFIRM (ARE YOU SURE) */}
+      <Modal visible={showDeleteModal} transparent animationType="fade">
+        <View style={[styles.modalOverlay, { backgroundColor: theme.modalOverlay }]}>
+          <View style={[styles.modalBox, { backgroundColor: theme.modalBG }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Delete Account</Text>
+            <Text style={[styles.modalText, { color: theme.modalText }]}>
+              Are you sure you want to delete your account?\nThis will permanently delete your account and all teams you created. This action cannot be undone.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.btn, { backgroundColor: theme.cancelBtn }]}
+                onPress={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+              >
+                <Text style={{ color: theme.text }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.btn, { backgroundColor: "#FF4500" }]}
+                onPress={permanentlyDeleteAccount}
+                disabled={isDeleting}
+              >
+                <Text style={{ color: "white", fontWeight: "700" }}>
+                  {isDeleting ? "Deleting..." : "Yes, Delete"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -449,10 +432,12 @@ export default function CustomDrawer(props) {
 const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1 },
   profileSection: { padding: 20, borderBottomWidth: 1, marginBottom: 4 },
+
   userName: { fontSize: 18, fontWeight: "700" },
   userEmail: { fontSize: 13, fontWeight: "500", marginTop: 2 },
 
   menuSection: { paddingHorizontal: 10 },
+
   drawerItemBase: {
     flexDirection: "row",
     alignItems: "center",
@@ -464,6 +449,7 @@ const styles = StyleSheet.create({
 
   icon: { marginRight: 15 },
   drawerLabel: { fontSize: 16, fontWeight: "600" },
+
   spacer: { flex: 3 },
 
   logoutSection: {
@@ -477,12 +463,14 @@ const styles = StyleSheet.create({
   logoutText: { fontSize: 16, fontWeight: "700" },
 
   modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center" },
+
   modalBox: {
-    width: "80%",
+    width: "85%",
     borderRadius: 16,
     padding: 20,
     alignItems: "center",
   },
+
   modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
   modalText: { fontSize: 15, textAlign: "center", marginBottom: 16 },
 
@@ -491,6 +479,7 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "space-between",
   },
+
   btn: {
     flex: 1,
     paddingVertical: 10,
@@ -498,6 +487,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 5,
   },
+
   logoutBtnText: { color: "#fff", fontWeight: "700" },
 
   profileModalBox: {
@@ -506,7 +496,13 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
   },
-  profileModalClose: { position: "absolute", top: 10, right: 10 },
+
+  profileModalClose: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+  },
+
   profilePic: { width: 110, height: 110, borderRadius: 55, marginBottom: 10 },
   changePhotoText: { marginTop: 6, fontSize: 14, fontWeight: "600" },
 
@@ -523,6 +519,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
+
   profileButtonText: { fontSize: 16, fontWeight: "600", marginLeft: 10 },
 
   nicknameInput: {
