@@ -6,15 +6,15 @@ import {
 } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
-// ✅ Your Firebase config
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAISsEd9BvCMj4l_YjdC2_sq0TrqYHwA6A",
-  authDomain: "recap-8bbfd.firebaseapp.com",
-  projectId: "recap-8bbfd",
-  storageBucket: "recap-8bbfd.appspot.com",
-  messagingSenderId: "885333900987",
-  appId: "1:885333900987:web:fa5d65c59e325b361af39e",
-  databaseURL: "https://recap-8bbfd-default-rtdb.firebaseio.com",
+  apiKey: "AIzaSyDSHiQezrQlauVWTrhHDagrGHS8dobWNps",
+  authDomain: "recap-7abd3.firebaseapp.com",
+  projectId: "recap-7abd3",
+  storageBucket: "recap-7abd3.firebasestorage.app",
+  messagingSenderId: "145648266811",
+  appId: "1:145648266811:web:3ceb6da2a7d8b2ee74b61e",
+  databaseURL: "https://recap-7abd3-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 // ✅ Initialize Firebase app
