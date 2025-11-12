@@ -2,14 +2,21 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "jsx": "react-jsx",
+    "target": "ES2020",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "allowJs": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2020", "DOM"],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
-    }
+      "@/*": ["./*"]
+    },
+    "allowImportingTsExtensions": true,
+    "noImplicitAny": false,
+    "exactOptionalPropertyTypes": false
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx"
-  ]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
