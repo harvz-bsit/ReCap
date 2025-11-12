@@ -25,7 +25,6 @@ import { db } from "@/firebase/firebaseConfig";
 type Member = {
   name: string;
   role?: string;
-  department?: string;
 };
 
 const BAD_NAMES = [
@@ -84,13 +83,11 @@ export default function TeamDetailsScreen() {
       if (snap.exists()) {
         const profile = snap.val();
         const displayName =
-          (profile.nickname && String(profile.nickname).trim()) ||
           `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim();
 
         members.push({
           name: displayName || "Unknown",
           role: profile.workType || "Member",
-          department: profile.department || "IT",
         });
       }
     }
@@ -482,7 +479,7 @@ export default function TeamDetailsScreen() {
                       {member.name}
                     </Text>
                     <Text style={[styles.memberRole, { color: theme.secondary }]}>
-                      {member.role} • {member.department}
+                      {member.role}
                     </Text>
                   </View>
                 </View>

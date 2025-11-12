@@ -139,6 +139,7 @@ export default function CustomDrawer(props: any) {
     await AsyncStorage.removeItem("loggedInUser");
     await AsyncStorage.removeItem("loggedInUserEmail");
     setShowConfirmLogout(false);
+    global.loggedInUser = null;
     router.replace("/");
   };
 

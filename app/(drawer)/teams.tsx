@@ -20,7 +20,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 type Member = {
   name: string;
   role?: string;
-  department?: string;
 };
 
 type TeamTask = {
@@ -84,14 +83,12 @@ export default function TeamsScreen() {
       const userObj = snap.exists() ? snap.val() : user;
 
       const displayName =
-        (userObj.nickname && String(userObj.nickname).trim()) ||
         `${userObj.firstName ?? ""} ${userObj.lastName ?? ""}`.trim();
 
       setCurrentUser({
         uid,
         name: displayName || "User",
         role: userObj.workType || "Member",
-        department: userObj.department || "IT",
       });
     };
 
@@ -150,7 +147,6 @@ export default function TeamsScreen() {
       const leader = {
         name: currentUser.name,
         role: "Leader",
-        department: currentUser.department,
       };
 
       const joinCode = generateJoinCode();
@@ -239,7 +235,6 @@ export default function TeamsScreen() {
       members[currentUser.uid] = {
         name: currentUser.name,
         role: "Member",
-        department: currentUser.department,
       };
 
       await update(ref(db, `teams/${teamId}`), { members });
