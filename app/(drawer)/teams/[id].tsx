@@ -27,28 +27,19 @@ type Member = {
   role?: string;
 };
 
-const BAD_NAMES = [
-  "Alyssa Quinones",
-  "Mark Reyes",
-  "Emma Diaz",
-  "",
-  null as any,
-  undefined as any,
-];
-
 export default function TeamDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const navigation = useNavigation();
 
-  // ---------- State (all hooks at the top) ----------
   const [team, setTeam] = useState<any>(null);
   const [taskList, setTaskList] = useState<any[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [removeMemberUID, setRemoveMemberUID] = useState<string | null>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [localUser, setLocalUser] = useState<any>(null);
 
-  // ---------- Theme ----------
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = useMemo(
@@ -62,14 +53,12 @@ export default function TeamDetailsScreen() {
       border: isDark ? "#333" : "#E0E0E0",
       danger: "#DC2626",
       dangerBg: "#FEE2E2",
-      // for icon backgrounds/borders used by child cards
       iconBg: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
       iconBorder: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
     }),
     [isDark]
   );
 
-  // ---------- Helpers ----------
   const fetchMemberProfiles = async (
     membersRaw: Record<string, boolean> | undefined
   ) => {
@@ -95,50 +84,53 @@ export default function TeamDetailsScreen() {
     return members;
   };
 
-  const sanitizeTasks = (tasks: any[], meName: string) =>
-    (tasks || []).map((t) => ({
-      ...t,
-      assignedTo: BAD_NAMES.includes(t?.assignedTo as any) ? meName : t?.assignedTo,
-    }));
-
-  // ---------- Load local user once ----------
   useEffect(() => {
     AsyncStorage.getItem("loggedInUser").then((u) => {
       setLocalUser(u ? JSON.parse(u) : null);
     });
   }, []);
 
-  // ---------- Realtime team listener ----------
   useEffect(() => {
     if (!id) return;
 
     const teamRef = ref(db, `teams/${id}`);
     const cb = async (snapshot: any) => {
       const data = snapshot.val();
-
-      // If team no longer exists, go back to list
       if (!data) {
         router.replace("/(drawer)/teams");
         return;
       }
 
-      // Ensure we know who "me" is for task sanitization and membership checks
       const stored = await AsyncStorage.getItem("loggedInUser");
       const me = stored ? JSON.parse(stored) : null;
       const meName = me?.firstName ? `${me.firstName} ${me.lastName ?? ""}`.trim() : "User";
       const myUid = me?.uid;
 
-      // If members exist and I'm not in the members anymore, redirect out
       if (myUid && data.members && !data.members[myUid]) {
         router.replace("/(drawer)/teams");
         return;
       }
 
-      const tasksRaw = data.tasks ? Object.values(data.tasks) : [];
+      // ---- TASKS ----
+      const tasksRawObj = data.Tasks || {};
+      const tasksRaw = Object.entries(tasksRawObj).map(([taskId, t]: any) => ({
+        id: taskId,
+        Task: t.Task,
+        assignedTo: t.Asignee,
+        status: t.status || "pending",
+      }));
+
+      // If user is creator, show all tasks
+      let myTasks = myUid && data.creatorUID === myUid
+        ? tasksRaw
+        : tasksRaw.filter((t) => t.assignedTo === myUid);
+
+      // ---- MEETINGS ----
       const meetingsRaw = data.meetings ? Object.values(data.meetings) : [];
+
+      // ---- MEMBERS ----
       const membersArray = await fetchMemberProfiles(data.members);
 
-      // Order members: creator first
       let orderedMembers = membersArray;
       if (data.creatorUID) {
         const creatorSnap = await get(ref(db, `users/${data.creatorUID}`));
@@ -165,30 +157,27 @@ export default function TeamDetailsScreen() {
         overview: data.overview || "",
         creatorUID: data.creatorUID || null,
         members: orderedMembers,
-        tasks: sanitizeTasks(tasksRaw, meName),
+        tasks: myTasks, // updated to show all tasks for creator
         meetings: meetingsRaw,
         joinCode: data.joinCode || "",
-        rawMembers: data.members || {}, // keep raw for counts
+        rawMembers: data.members || {},
       });
 
-      setTaskList(sanitizeTasks(tasksRaw, meName));
+      setTaskList(myTasks);
     };
 
     onValue(teamRef, cb);
     return () => off(teamRef, "value", cb);
   }, [id, router]);
 
-  // ---------- Header title ----------
   useLayoutEffect(() => {
     if (team?.name) (navigation as any)?.setOptions?.({ title: team.name });
   }, [team, navigation]);
 
-  // ---------- Leave team logic ----------
   const handleLeaveTeam = async () => {
     try {
       const stored = await AsyncStorage.getItem("loggedInUser");
       const me = stored ? JSON.parse(stored) : null;
-
       if (!me?.uid) {
         Alert.alert("Error", "User not found.");
         return;
@@ -199,7 +188,6 @@ export default function TeamDetailsScreen() {
       const teamSnap = await get(teamRef);
 
       if (!teamSnap.exists()) {
-        // Already gone — just bounce out
         setShowLeaveConfirm(false);
         setShowMembers(false);
         router.replace("/(drawer)/teams");
@@ -213,7 +201,6 @@ export default function TeamDetailsScreen() {
 
       const isCreator = teamData.creatorUID === myUid;
 
-      // If creator AND the only member -> delete the team
       if (isCreator && memberCount <= 1) {
         await remove(teamRef);
         setShowLeaveConfirm(false);
@@ -222,7 +209,6 @@ export default function TeamDetailsScreen() {
         return;
       }
 
-      // If creator but there are other members -> cannot leave
       if (isCreator && memberCount > 1) {
         Alert.alert(
           "Cannot Leave",
@@ -231,10 +217,7 @@ export default function TeamDetailsScreen() {
         return;
       }
 
-      // Regular member: remove membership
       await remove(ref(db, `teams/${id}/members/${myUid}`));
-
-      // Close modals and redirect immediately
       setShowLeaveConfirm(false);
       setShowMembers(false);
       router.replace("/(drawer)/teams");
@@ -244,7 +227,18 @@ export default function TeamDetailsScreen() {
     }
   };
 
-  // ---------- Derived + UI helpers ----------
+  const handleRemoveMember = async () => {
+    if (!removeMemberUID) return;
+    try {
+      await remove(ref(db, `teams/${id}/members/${removeMemberUID}`));
+      setRemoveMemberUID(null);
+      setShowRemoveConfirm(false);
+    } catch (err) {
+      console.error("Remove member error:", err);
+      Alert.alert("Error", "Failed to remove member. Try again.");
+    }
+  };
+
   if (!team) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
@@ -256,7 +250,6 @@ export default function TeamDetailsScreen() {
   }
 
   const isCreator = localUser?.uid && team?.creatorUID === localUser.uid;
-
   const now = new Date();
   const getMeetingStatus = (date: string, time: string) =>
     new Date(`${date}T${time}:00`) < now ? "Missed" : "Upcoming";
@@ -282,67 +275,87 @@ export default function TeamDetailsScreen() {
     Alert.alert("Copied", "Join code copied to clipboard.");
   };
 
-  // ---------- Render ----------
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
-      {/* HEADER */}
-      <View style={[styles.headerRow, { paddingHorizontal: 16, paddingTop: 12, marginBottom: 15 }]}>
-        <TouchableOpacity
-          onPress={() => router.push("/(drawer)/teams")}
-          style={styles.backButton}
+      {/* HEADER AND STATS */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, marginBottom: 15 }}>
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            paddingVertical: 16,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
         >
-          <Ionicons name="arrow-back-circle-outline" size={24} color={theme.blue} />
-        </TouchableOpacity>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => router.push("/(drawer)/teams")}
+              style={styles.backButton}
+            >
+              <Ionicons name="arrow-back-circle-outline" size={24} color={theme.blue} />
+            </TouchableOpacity>
 
-        <Text style={[styles.header, { color: theme.text }]}>{team.name}</Text>
+            <Text
+              style={[styles.header, { color: theme.text, flex: 1, textAlign: "center" }]}
+            >
+              {team.name}
+            </Text>
 
-        <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
-          <Ionicons name="information-circle" size={26} color={theme.blue} />
-        </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
+              <Ionicons name="information-circle" size={26} color={theme.blue} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <StatCard
+              icon="assignment"
+              color="#F59E0B"
+              number={pendingTasks.length}
+              label="Pending"
+              theme={theme}
+            />
+            <StatCard
+              icon="task-alt"
+              color="#16A34A"
+              number={completedTasks.length}
+              label="Completed"
+              theme={theme}
+            />
+            <StatCard
+              icon="calendar-today"
+              color={theme.blue}
+              number={team.meetings?.length || 0}
+              label="Meetings"
+              theme={theme}
+            />
+          </View>
+        </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* STATS */}
-        <View style={styles.statsContainer}>
-          <StatCard
-            icon="assignment"
-            color="#F59E0B"
-            number={pendingTasks.length}
-            label="Pending"
-            theme={theme}
-          />
-          <StatCard
-            icon="task-alt"
-            color="#16A34A"
-            number={completedTasks.length}
-            label="Completed"
-            theme={theme}
-          />
-          <StatCard
-            icon="calendar-today"
-            color={theme.blue}
-            number={team.meetings?.length || 0}
-            label="Meetings"
-            theme={theme}
-          />
-        </View>
-
         {/* TASKS */}
-        <Text style={[styles.subHeader, { color: theme.text }]}>
+        <Text style={[styles.subHeader, { color: theme.text, marginTop: 16 }]}>
           <MaterialIcons name="assignment" size={18} /> Tasks
         </Text>
 
         {pendingTasks.length > 0 ? (
           pendingTasks.map((t) => (
-            <TaskItem
-              key={t.id}
-              task={t}
-              theme={theme}
-              toggleTaskStatus={toggleTaskStatus}
-            />
+            <TaskItem key={t.id} task={t} theme={theme} toggleTaskStatus={toggleTaskStatus} />
           ))
         ) : (
           <Text style={[styles.noItemsText, { color: theme.secondary }]}>
@@ -350,7 +363,6 @@ export default function TeamDetailsScreen() {
           </Text>
         )}
 
-        {/* COMPLETED TASKS (Creator Only) */}
         {isCreator && completedTasks.length > 0 && (
           <>
             <Text style={[styles.subHeader, { color: "#16A34A" }]}>
@@ -358,12 +370,7 @@ export default function TeamDetailsScreen() {
             </Text>
 
             {completedTasks.map((t) => (
-              <TaskItem
-                key={t.id}
-                task={t}
-                theme={theme}
-                toggleTaskStatus={toggleTaskStatus}
-              />
+              <TaskItem key={t.id} task={t} theme={theme} toggleTaskStatus={toggleTaskStatus} />
             ))}
           </>
         )}
@@ -375,12 +382,7 @@ export default function TeamDetailsScreen() {
 
         {team.meetings?.length > 0 ? (
           team.meetings.map((m: any) => (
-            <MeetingItem
-              key={m.id}
-              meeting={m}
-              theme={theme}
-              getMeetingStatus={getMeetingStatus}
-            />
+            <MeetingItem key={m.id} meeting={m} theme={theme} getMeetingStatus={getMeetingStatus} />
           ))
         ) : (
           <Text style={[styles.noItemsText, { color: theme.secondary }]}>
@@ -388,9 +390,8 @@ export default function TeamDetailsScreen() {
           </Text>
         )}
 
-        {/* EXPORT */}
         <TouchableOpacity
-          style={[styles.exportButton, { backgroundColor: theme.accent }]}
+          style={[styles.exportButton, { backgroundColor: theme.accent, marginTop: 16 }]}
           onPress={handleExport}
         >
           <Ionicons name="cloud-upload-sharp" size={20} color="#fff" />
@@ -400,28 +401,20 @@ export default function TeamDetailsScreen() {
         <View style={{ height: 30 }} />
       </ScrollView>
 
-      {/* MEMBERS / INFO MODAL (Floating Modal) */}
+      {/* MEMBERS / INFO MODAL */}
       <Modal visible={showMembers} transparent animationType="fade">
         <View style={styles.modalOverlayCenter}>
           <View
             style={[
               styles.modalContentCenter,
-              { backgroundColor: theme.card, padding: 0, width: "90%", maxHeight: "80%", borderRadius: 15 }, // Floating card styles
+              { backgroundColor: theme.card, padding: 0, width: "90%", maxHeight: "80%", borderRadius: 15 },
             ]}
           >
             {/* MODAL HEADER */}
             <View
-              style={[
-                styles.modalHeader,
-                { padding: 16, borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-              ]}
+              style={[styles.modalHeader, { padding: 16, borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
             >
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { fontSize: 20, fontWeight: "700", color: theme.text },
-                ]}
-              >
+              <Text style={[styles.modalTitle, { fontSize: 20, fontWeight: "700", color: theme.text }]}>
                 Team Info
               </Text>
               <TouchableOpacity onPress={() => setShowMembers(false)}>
@@ -430,71 +423,57 @@ export default function TeamDetailsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16 }}>
-              {/* JOIN CODE (Creator Only) */}
               {isCreator && !!team.joinCode && (
                 <TouchableOpacity
                   onPress={copyJoinCode}
                   activeOpacity={0.8}
-                  style={[
-                    styles.memberCard,
-                    {
-                      borderWidth: 1,
-                      borderColor: theme.border,
-                      backgroundColor: theme.bg,
-                      padding: 14,
-                      marginBottom: 12,
-                      alignItems: "flex-start",
-                    },
-                  ]}
+                  style={[styles.memberCard, { borderWidth: 1, borderColor: theme.border, backgroundColor: theme.bg, padding: 14, marginBottom: 12, alignItems: "flex-start" }]}
                 >
                   <View>
                     <Text style={{ fontWeight: "700", color: theme.text }}>Join Code</Text>
-                    <Text selectable style={{ color: theme.text, marginTop: 4 }}>
-                      {team.joinCode}
-                    </Text>
+                    <Text selectable style={{ color: theme.text, marginTop: 4 }}>{team.joinCode}</Text>
                   </View>
                 </TouchableOpacity>
               )}
 
-              {/* MEMBERS LIST */}
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { color: theme.text, marginTop: 10, marginBottom: 5 },
-                ]}
-              >
+              <Text style={[styles.modalTitle, { color: theme.text, marginTop: 10, marginBottom: 5 }]}>
                 Members
               </Text>
-              {team.members.map((member: Member, idx: number) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.memberCard,
-                    { backgroundColor: theme.bg, paddingVertical: 12 },
-                  ]}
-                >
-                  <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
-                  <View>
-                    <Text style={[styles.memberName, { color: theme.text }]}>
-                      {member.name}
-                    </Text>
-                    <Text style={[styles.memberRole, { color: theme.secondary }]}>
-                      {member.role}
-                    </Text>
+
+              {team.members.map((member: Member, idx: number) => {
+                const memberUID = Object.keys(team.rawMembers)[idx];
+                const isMemberCreator = memberUID === team.creatorUID;
+
+                return (
+                  <View
+                    key={idx}
+                    style={[styles.memberCard, { backgroundColor: theme.bg, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <Ionicons name="person-circle-sharp" size={32} color={theme.blue} />
+                      <View>
+                        <Text style={[styles.memberName, { color: theme.text }]}>{member.name}</Text>
+                        <Text style={[styles.memberRole, { color: theme.secondary }]}>{member.role}</Text>
+                      </View>
+                    </View>
+
+                    {isCreator && !isMemberCreator && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setRemoveMemberUID(memberUID);
+                          setShowRemoveConfirm(true);
+                        }}
+                        style={{ backgroundColor: theme.danger, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 5 }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "600" }}>Remove</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                </View>
-              ))}
+                );
+              })}
 
               <TouchableOpacity
-                style={[
-                  styles.leaveTeamButton,
-                  {
-                    borderColor: theme.danger,
-                    backgroundColor: theme.dangerBg,
-                    marginTop: 20,
-                    marginBottom: 20, // Reduced margin for floating modal
-                  },
-                ]}
+                style={[styles.leaveTeamButton, { borderColor: theme.danger, backgroundColor: theme.dangerBg, marginTop: 20, marginBottom: 20 }]}
                 onPress={() => setShowLeaveConfirm(true)}
               >
                 <Ionicons name="log-out-outline" size={22} color={theme.danger} />
@@ -511,24 +490,47 @@ export default function TeamDetailsScreen() {
         </View>
       </Modal>
 
-      {/* LEAVE / DELETE CONFIRM */}
+      {/* REMOVE MEMBER CONFIRMATION */}
+      <Modal visible={showRemoveConfirm} transparent animationType="fade">
+        <View style={styles.modalOverlayCenter}>
+          <View style={[styles.modalContentCenter, { backgroundColor: theme.card, padding: 20, width: "85%" }]}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: theme.text, textAlign: "center", marginBottom: 20 }}>
+              Are you sure you want to remove this member?
+            </Text>
+
+            <View style={{ flexDirection: "row" }}>
+              <TouchableOpacity
+                onPress={() => setShowRemoveConfirm(false)}
+                style={{
+                  backgroundColor: theme.bg,
+                  flex: 1,
+                  marginRight: 8,
+                  padding: 12,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+              >
+                <Text style={{ color: theme.text, fontWeight: "600" }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleRemoveMember}
+                style={{ backgroundColor: theme.danger, flex: 1, marginLeft: 8, padding: 12, borderRadius: 10, alignItems: "center" }}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "600" }}>Yes, Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* LEAVE / DELETE CONFIRMATION */}
       <Modal visible={showLeaveConfirm} transparent animationType="fade">
         <View style={styles.modalOverlayCenter}>
-          <View
-            style={[
-              styles.modalContentCenter,
-              { backgroundColor: theme.card, padding: 20, width: "85%" },
-            ]}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "700",
-                color: theme.text,
-                textAlign: "center",
-                marginBottom: 20,
-              }}
-            >
+          <View style={[styles.modalContentCenter, { backgroundColor: theme.card, padding: 20, width: "85%" }]}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: theme.text, textAlign: "center", marginBottom: 20 }}>
               {isCreator && team?.rawMembers && Object.keys(team.rawMembers).length <= 1
                 ? `Delete ${team.name}?`
                 : `Are you sure you want to leave ${team.name}?`}
