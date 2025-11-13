@@ -18,7 +18,7 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { db } from "../firebase/firebaseConfig"; // Ensure this path is correct
+import { db } from "../firebase/firebaseConfig";
 
 const LOGO = require("../app/images/recap-logo.png");
 const { width } = Dimensions.get("window");
@@ -33,7 +33,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // Keyboard listeners (kept original)
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
       setKeyboardHeight(e.endCoordinates.height)
@@ -41,7 +40,6 @@ export default function LoginScreen() {
     const hideSub = Keyboard.addListener("keyboardDidHide", () =>
       setKeyboardHeight(0)
     );
-
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -55,13 +53,11 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      // 1. Fetch ALL users (same approach you used)
       const snapshot = await get(child(ref(db), "users"));
       const data = snapshot.val();
 
-      // 2. Find user by email
       const foundUser = data
-        ? Object.entries(data).find(([uid, user]: any) => user.email === email)
+        ? Object.entries(data).find(([_, user]: any) => user.email === email)
         : null;
 
       if (!foundUser) {
@@ -70,19 +66,17 @@ export default function LoginScreen() {
       }
 
       const [uid, userObj]: any = foundUser;
-
-      // 3. Compare password (bcryptjs)
       const passwordMatch = bcrypt.compareSync(password, userObj.password);
+
       if (!passwordMatch) {
         Alert.alert("Error", "Invalid email or password");
         return;
       }
 
-      // 4. ✅ Save CONSISTENT session data under "loggedInUser"
       await AsyncStorage.setItem(
         "loggedInUser",
         JSON.stringify({
-          uid, // <-- canonical key everywhere
+          uid,
           email: userObj.email,
           firstName: userObj.firstName,
           lastName: userObj.lastName,
@@ -107,6 +101,7 @@ export default function LoginScreen() {
     text: isDark ? "#FFFFFF" : "#000000",
     inputBg: isDark ? "#2A2A2A" : "#FFF",
     button: "#1976D2",
+    quote: isDark ? "#CCCCCC" : "#555",
   };
 
   return (
@@ -117,32 +112,27 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingBottom: keyboardHeight + 24 },
+          { paddingBottom: keyboardHeight + 40 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={{
-            backgroundColor: "#1976D2",
-            padding: 11,
-            borderRadius: 25,
-            marginBottom: 30,
-            marginRight: 20,
-            marginLeft: 20,
-            marginTop: 20,
-            justifyContent: "center",
-            width: width * 0.65,
-            height: width * 0.5,
-            alignItems: "center",
-          }}
-        >
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-        </View>
-
+        {/* Login Card */}
         <View style={[styles.card, { backgroundColor: theme.card }]}>
+          {/* Logo Inside Card */}
+          <View style={styles.logoWrapper}>
+            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+          </View>
+
+          {/* Quote Inside Card */}
+          <Text style={[styles.quoteText, { color: theme.quote }]}>
+            “Stay consistent — progress takes time.”
+          </Text>
+
+          {/* Title */}
           <Text style={[styles.title, { color: theme.text }]}>Login</Text>
 
+          {/* Email Input */}
           <TextInput
             placeholder="Email"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
@@ -156,6 +146,7 @@ export default function LoginScreen() {
             onChangeText={setEmail}
           />
 
+          {/* Password Input */}
           <TextInput
             placeholder="Password"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
@@ -168,6 +159,7 @@ export default function LoginScreen() {
             onChangeText={setPassword}
           />
 
+          {/* Login Button */}
           <TouchableOpacity
             style={[styles.button, { backgroundColor: theme.button }]}
             onPress={handleLogin}
@@ -178,12 +170,13 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Sign Up Link */}
           <TouchableOpacity
             onPress={() => router.push("/signup")}
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 20 }}
           >
             <Text style={{ color: theme.text, textAlign: "center" }}>
-              Don't have an account?{" "}
+              Don’t have an account?{" "}
               <Text style={{ fontWeight: "bold", color: theme.button }}>
                 Sign Up
               </Text>
@@ -200,20 +193,40 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
-  },
-  logo: {
-    width: 150,
-    height: 120,
+    paddingHorizontal: 32,
+    paddingVertical: 40,
   },
   card: {
     width: "100%",
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 6,
+  },
+  logoWrapper: {
+    backgroundColor: "#1976D2",
+    borderRadius: 30,
+    padding: 18,
+    width: width * 0.5,
+    height: width * 0.35,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  logo: {
+    width: "100%",
+    height: "75%",
+  },
+  quoteText: {
+    fontSize: 15,
+    textAlign: "center",
+    fontStyle: "italic",
+    marginBottom: 20,
+    opacity: 0.9,
+    paddingHorizontal: 10,
   },
   title: {
     fontSize: 28,
@@ -221,12 +234,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 24,
   },
-  input: { borderRadius: 12, padding: 12, marginVertical: 8, fontSize: 16 },
-  button: { borderRadius: 12, paddingVertical: 14, marginTop: 16 },
+  input: {
+    borderRadius: 14,
+    padding: 14,
+    marginVertical: 10,
+    fontSize: 16,
+    width: "100%",
+  },
+  button: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 20,
+    width: "100%",
+  },
   buttonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 16,
+    fontSize: 17,
     textAlign: "center",
   },
 });

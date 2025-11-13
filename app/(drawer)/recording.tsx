@@ -1,7 +1,8 @@
+import { db } from "@/firebase/firebaseConfig";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
-import { off, onValue, ref } from "firebase/database";
+import { off, onValue, push, ref, set } from "firebase/database";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -15,12 +16,8 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-
-// Firebase
-import { db } from "@/firebase/firebaseConfig";
-
-// Safe Area Context
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
 // =================================================================
 // 🚨 TYPE DEFINITION
 // =================================================================
@@ -29,8 +26,8 @@ type Team = {
   name: string;
   overview?: string;
   members: Record<string, any>;
-  tasks: Record<string, any>;
-  meetings: Record<string, any>;
+  tasks?: Record<string, any>;
+  meetings?: Record<string, any>;
   joinCode?: string;
   creatorUID?: string;
 };
@@ -41,11 +38,7 @@ const useAdaptivePadding = () => {
   const screenHeight = Dimensions.get("window").height;
 
   const sizeFactor =
-    screenHeight < 700
-      ? 0.85
-      : screenHeight > 820
-      ? 1.15
-      : 1;
+    screenHeight < 700 ? 0.85 : screenHeight > 820 ? 1.15 : 1;
 
   return {
     top: Math.max(insets.top, 12) * sizeFactor,
@@ -55,14 +48,58 @@ const useAdaptivePadding = () => {
   };
 };
 
+// =================================================================
+// 🧠 HELPER: Levenshtein Distance (Fuzzy Match)
+// =================================================================
+function levenshtein(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0)
+  );
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function findClosestMember(
+  assigneeName: string,
+  members: Record<string, any>
+) {
+  assigneeName = assigneeName.toLowerCase();
+  const threshold = 2; // Max allowed distance
+  let bestMatch: any = null;
+  let bestDistance = Infinity;
+
+  for (const [uid, member] of Object.entries(members)) {
+    const memberName = member.name.toLowerCase();
+    const distance = levenshtein(assigneeName, memberName);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = { uid, name: member.name };
+    }
+  }
+
+  return bestDistance <= threshold ? bestMatch : null;
+}
+
+// =================================================================
+// 🚀 MAIN COMPONENT
+// =================================================================
 export default function RecordScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const adaptive = useAdaptivePadding();
 
-  // =================================================================
-  // ✅ STATE
-  // =================================================================
+  // STATE
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [status, setStatus] = useState<"ready" | "recording" | "paused" | "review">("ready");
@@ -70,8 +107,13 @@ export default function RecordScreen() {
   const [seconds, setSeconds] = useState(0);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isSummaryReady, setIsSummaryReady] = useState(false);
+  const [summaryData, setSummaryData] = useState<{ summary: string; tasks: any[] }>({
+    summary: "",
+    tasks: [],
+  });
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const theme = useMemo(
     () => ({
@@ -112,30 +154,26 @@ export default function RecordScreen() {
   // =================================================================
   useEffect(() => {
     if (!currentUserUid) return;
-
     const teamsRef = ref(db, "teams");
-
     const listener = onValue(teamsRef, (snapshot) => {
-      const teamsData = snapshot.val() || {};
-      const teamList: Team[] = [];
-
-      Object.entries(teamsData).forEach(([id, data]: [string, any]) => {
-        if (data.members && currentUserUid in data.members) {
-          teamList.push({
+      const data = snapshot.val() || {};
+      const list: Team[] = [];
+      Object.entries(data).forEach(([id, teamData]: [string, any]) => {
+        if (teamData.members && currentUserUid in teamData.members) {
+          list.push({
             id,
-            name: data.name || "Unnamed Team",
-            overview: data.overview || "",
-            members: data.members,
-            tasks: data.tasks,
-            meetings: data.meetings,
-            joinCode: data.joinCode,
-            creatorUID: data.creatorUID,
+            name: teamData.name,
+            overview: teamData.overview,
+            members: teamData.members,
+            tasks: teamData.tasks || {},
+            meetings: teamData.meetings || {},
+            joinCode: teamData.joinCode,
+            creatorUID: teamData.creatorUID,
           });
         }
       });
-      setTeams(teamList);
+      setTeams(list);
     });
-
     return () => off(teamsRef, "value", listener);
   }, [currentUserUid]);
 
@@ -144,7 +182,7 @@ export default function RecordScreen() {
   // =================================================================
   useEffect(() => {
     if (status === "recording") {
-      intervalRef.current = setInterval(() => setSeconds((prev) => prev + 1), 1000);
+      intervalRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
@@ -152,9 +190,9 @@ export default function RecordScreen() {
   }, [status]);
 
   const formatTime = (totalSeconds: number) => {
-    const min = Math.floor(totalSeconds / 60);
-    const sec = totalSeconds % 60;
-    return `${min < 10 ? "0" : ""}${min}:${sec < 10 ? "0" : ""}${sec}`;
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
   // =================================================================
@@ -162,20 +200,14 @@ export default function RecordScreen() {
   // =================================================================
   const handleRecordResume = async () => {
     try {
-      console.log("Starting recording...");
       setSeconds(0);
       setTranscriptionText("Recording in progress...");
       setStatus("recording");
+      setIsSummaryReady(false);
 
       await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       setRecording(recording);
     } catch (error) {
       console.error("Recording error:", error);
@@ -183,81 +215,120 @@ export default function RecordScreen() {
     }
   };
 
-const handleFinish = async () => {
-  try {
-    if (!recording) return;
+  const handleFinish = async () => {
+    try {
+      if (!recording) return;
 
-    setStatus("review");
-    setTranscriptionText("⏳ Uploading audio and generating meeting summary...");
+      setStatus("review");
+      setTranscriptionText("⏳ Uploading audio and generating meeting summary...");
+      setIsSummaryReady(false);
 
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    console.log("Audio saved at:", uri);
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
 
-    const formData = new FormData();
-    formData.append("file", {
-      uri,
-      type: "audio/m4a",
-      name: "recording.m4a",
-    } as any);
+      const formData = new FormData();
+      formData.append("file", { uri, type: "audio/m4a", name: "recording.m4a" } as any);
 
-    const response = await fetch("http://192.168.100.2:3000/transcribe", {
-      method: "POST",
-      body: formData,
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+      const response = await fetch("http://192.168.100.2:3000/transcribe", {
+        method: "POST",
+        body: formData,
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-    const result = await response.json();
-    console.log("Server result:", result);
+      const result = await response.json();
 
-    if (result.summary) {
-      setTranscriptionText(result.summary);
-    } else if (result.transcription) {
-      setTranscriptionText(result.transcription);
-    } else if (result.error) {
-      setTranscriptionText(`❌ Transcription failed: ${result.error}`);
-    } else {
-      setTranscriptionText("❌ No transcription or summary returned from server.");
-    }
-
-    setRecording(null);
-  } catch (error) {
-    console.error("Finish error:", error);
-    Alert.alert("Error", "Failed to finish recording or generate summary.");
-  }
-};
-
-
-
-  const handleCheckAndSave = () => {
-    if (teams.length === 0) {
-      Alert.alert(
-        "No Teams Found",
-        "You must be a member of at least one team to save a meeting summary.",
-        [{ text: "OK" }]
-      );
-      handleCancelSave();
-    } else {
-      setShowSaveModal(true);
+      if (result.summary) {
+        setSummaryData({ summary: result.summary, tasks: result.tasks || [] });
+        setTranscriptionText(result.summary);
+        setIsSummaryReady(true);
+      } else {
+        setTranscriptionText(`❌ Failed to summarize: ${result.error || "Unknown error"}`);
+      }
+      setRecording(null);
+    } catch (error) {
+      console.error("Finish error:", error);
+      Alert.alert("Error", "Failed to finish recording or generate summary.");
     }
   };
 
-  const handleSaveToTeam = (team: Team) => {
-    setShowSaveModal(false);
-    setSeconds(0);
-    setStatus("ready");
-    setTranscriptionText(`✅ Saved meeting summary to ${team.name}.`);
+  // =================================================================
+  // ✅ Save to Firebase with Full Name Fallback
+  // =================================================================
+  const handleSaveToTeam = async (team: Team) => {
+    try {
+      if (!summaryData.summary) return;
+
+      // -------------------------------
+      // 1️⃣ Save Meeting Summary
+      // -------------------------------
+      const newMeetingRef = push(ref(db, `teams/${team.id}/meetings`));
+      await set(newMeetingRef, {
+        createdBy: currentUserUid,
+        createdAt: Date.now(),
+        status: "completed",
+        summary: summaryData.summary,
+      });
+
+      // -------------------------------
+      // 2️⃣ Save Tasks
+      // -------------------------------
+      if (summaryData.tasks && summaryData.tasks.length > 0) {
+        for (const task of summaryData.tasks) {
+          // Assign to everyone if "everyone" mentioned
+          if (task.assigneeName?.toLowerCase().includes("everyone")) {
+            for (const [uid, member] of Object.entries(team.members)) {
+              const taskRef = push(ref(db, `teams/${team.id}/tasks`));
+              await set(taskRef, {
+                task: task.text,
+                status: "pending",
+                assignee: uid,
+                assigneeName: member.name,
+                createdAt: Date.now(),
+              });
+            }
+            continue;
+          }
+
+          // Assign to closest matching member
+          let assigned: { uid: string; name: string } | null = null;
+          if (task.assigneeName) {
+            const match = findClosestMember(task.assigneeName, team.members);
+            if (match) assigned = match;
+          }
+
+          const taskRef = push(ref(db, `teams/${team.id}/tasks`));
+          await set(taskRef, {
+            task: task.text,
+            status: "pending",
+            createdAt: Date.now(),
+            assignee: assigned?.uid || null,
+            assigneeName: assigned?.name || task.assigneeName, // <-- store full name fallback
+          });
+        }
+      }
+
+      setShowSaveModal(false);
+      setSeconds(0);
+      setStatus("ready");
+      setIsSummaryReady(false);
+      setTranscriptionText(`✅ Saved meeting summary and tasks to ${team.name}.`);
+    } catch (error) {
+      console.error("Error saving to RTDB:", error);
+      Alert.alert("Error", "Failed to save meeting and tasks to database.");
+    }
   };
 
   const handleCancelSave = () => {
     setShowSaveModal(false);
     setSeconds(0);
     setStatus("ready");
+    setIsSummaryReady(false);
     setTranscriptionText("Recording cancelled. Tap record to start again.");
   };
 
+  // =================================================================
+  // ✅ UI (UNCHANGED)
+  // =================================================================
   const statusText =
     status === "recording"
       ? "LIVE RECORDING"
@@ -276,68 +347,33 @@ const handleFinish = async () => {
       ? theme.green
       : theme.blue;
 
-  // =================================================================
-  // ✅ UI
-  // =================================================================
   const renderRecordingControls = () => (
-    <View
-      style={[
-        styles.controlArea,
-        {
-          backgroundColor: theme.card,
-          padding: adaptive.block,
-          marginBottom: adaptive.bottom,
-        },
-      ]}
-    >
+    <View style={[styles.controlArea, { backgroundColor: theme.card, padding: adaptive.block, marginBottom: adaptive.bottom }]}>
       <Text style={[styles.statusText, { color: statusColor }]}>• {statusText} •</Text>
-
       {(status === "recording" || status === "paused") && (
         <Text style={[styles.timerText, { color: theme.text }]}>{formatTime(seconds)}</Text>
       )}
-
       <View style={styles.buttonRow}>
-        {/* Record */}
         <TouchableOpacity
-          style={[
-            styles.recordButton,
-            {
-              backgroundColor:
-                status === "ready" ? theme.blue : theme.greyed,
-            },
-          ]}
+          style={[styles.recordButton, { backgroundColor: status === "ready" ? theme.blue : theme.greyed }]}
           onPress={status === "ready" ? handleRecordResume : undefined}
           disabled={status !== "ready"}
         >
           <Ionicons name="mic" size={36} color="#FFF" />
         </TouchableOpacity>
 
-        {/* Stop */}
         <TouchableOpacity
-          style={[
-            styles.smallButton,
-            {
-              backgroundColor:
-                status === "recording" ? theme.green : theme.greyed,
-            },
-          ]}
+          style={[styles.smallButton, { backgroundColor: status === "recording" ? theme.green : theme.greyed }]}
           onPress={status === "recording" ? handleFinish : undefined}
           disabled={status !== "recording"}
         >
           <Ionicons name="stop" size={26} color="#FFF" />
         </TouchableOpacity>
 
-        {/* Save */}
         <TouchableOpacity
-          style={[
-            styles.smallButton,
-            {
-              backgroundColor:
-                status === "review" ? theme.green : theme.greyed,
-            },
-          ]}
-          onPress={status === "review" ? handleCheckAndSave : undefined}
-          disabled={status !== "review"}
+          style={[styles.smallButton, { backgroundColor: status === "review" && isSummaryReady ? theme.green : theme.greyed }]}
+          onPress={status === "review" && isSummaryReady ? () => setShowSaveModal(true) : undefined}
+          disabled={!(status === "review" && isSummaryReady)}
         >
           <Ionicons name="checkmark" size={26} color="#FFF" />
         </TouchableOpacity>
@@ -347,7 +383,9 @@ const handleFinish = async () => {
         {status === "recording"
           ? "Tap stop to finish recording"
           : status === "review"
-          ? "Review transcription before saving"
+          ? isSummaryReady
+            ? "Review transcription before saving"
+            : "Generating summary..."
           : "Start new recording"}
       </Text>
     </View>
@@ -355,19 +393,9 @@ const handleFinish = async () => {
 
   const renderSaveInterfaceModalContent = () => (
     <View style={styles.modalOverlayCenter}>
-      <View
-        style={[
-          styles.modalContent,
-          { backgroundColor: theme.card, padding: adaptive.block },
-        ]}
-      >
-        <Text style={[styles.modalTitle, { color: theme.text }]}>
-          Save Meeting Summary
-        </Text>
-
-        <Text
-          style={[styles.statusText, { color: theme.secondary, marginBottom: 15 }]}
-        >
+      <View style={[styles.modalContent, { backgroundColor: theme.card, padding: adaptive.block }]}>
+        <Text style={[styles.modalTitle, { color: theme.text }]}>Save Meeting Summary</Text>
+        <Text style={[styles.statusText, { color: theme.secondary, marginBottom: 15 }]}>
           Select a team folder to save the summarized transcription.
         </Text>
 
@@ -375,75 +403,36 @@ const handleFinish = async () => {
           {teams.map((team) => (
             <TouchableOpacity
               key={team.id}
-              style={[
-                styles.teamSelectButton,
-                {
-                  backgroundColor: theme.lightCard,
-                  borderColor: theme.border,
-                },
-              ]}
+              style={[styles.teamSelectButton, { backgroundColor: theme.lightCard, borderColor: theme.border }]}
               onPress={() => handleSaveToTeam(team)}
             >
               <Ionicons name="folder-open-outline" size={24} color={theme.blue} />
-              <Text style={[styles.teamSelectText, { color: theme.text }]}>
-                {team.name}
-              </Text>
+              <Text style={[styles.teamSelectText, { color: theme.text }]}>{team.name}</Text>
               <Ionicons name="save-outline" size={20} color={theme.green} />
             </TouchableOpacity>
           ))}
         </ScrollView>
 
         <TouchableOpacity style={styles.cancelButton} onPress={handleCancelSave}>
-          <Text style={[styles.cancelButtonText, { color: theme.secondary }]}>
-            Cancel & Discard
-          </Text>
+          <Text style={[styles.cancelButtonText, { color: theme.secondary }]}>Cancel & Discard</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView
-      style={[
-        styles.safeArea,
-        {
-          backgroundColor: theme.bg,
-          paddingTop: adaptive.top,
-          paddingBottom: adaptive.bottom,
-        },
-      ]}
-      edges={["top", "bottom"]}
-    >
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg, paddingTop: adaptive.top, paddingBottom: adaptive.bottom }]} edges={["top", "bottom"]}>
       <View style={[styles.container, { paddingHorizontal: adaptive.horizontal }]}>
-        <View
-          style={[
-            styles.transcriptionCard,
-            {
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              padding: adaptive.block,
-              marginBottom: adaptive.block,
-            },
-          ]}
-        >
-          <Text style={[styles.transcriptionTitle, { color: theme.blue }]}>
-            Summarization:
-          </Text>
+        <View style={[styles.transcriptionCard, { backgroundColor: theme.card, borderColor: theme.border, padding: adaptive.block, marginBottom: adaptive.block }]}>
+          <Text style={[styles.transcriptionTitle, { color: theme.blue }]}>Summarization:</Text>
           <ScrollView style={styles.transcriptScroll}>
-            <Text
-              style={[
-                styles.transcriptText,
-                { color: theme.text, opacity: status === "ready" ? 0.7 : 1 },
-              ]}
-            >
+            <Text style={[styles.transcriptText, { color: theme.text, opacity: status === "ready" ? 0.7 : 1 }]}>
               {transcriptionText}
             </Text>
           </ScrollView>
         </View>
-
         {renderRecordingControls()}
       </View>
-
       <Modal visible={showSaveModal} animationType="fade" transparent>
         {renderSaveInterfaceModalContent()}
       </Modal>
@@ -452,72 +441,28 @@ const handleFinish = async () => {
 }
 
 // =================================================================
-// ✅ Styles
+// ✅ Styles (UNCHANGED)
 // =================================================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, alignItems: "center" },
   transcriptionCard: { flex: 1, width: "100%", borderRadius: 16, borderWidth: 1 },
-  transcriptionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 10,
-    paddingBottom: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ccc",
-  },
+  transcriptionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 10, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: "#ccc" },
   transcriptScroll: { flex: 1 },
   transcriptText: { fontSize: 16, lineHeight: 24, minHeight: 150 },
   controlArea: { width: "100%", borderRadius: 16, alignItems: "center" },
   statusText: { fontSize: 14, fontWeight: "800", marginBottom: 8, letterSpacing: 1.5 },
   timerText: { fontSize: 20, fontWeight: "700", marginBottom: 15 },
-  buttonRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    width: "100%",
-    marginVertical: 8,
-  },
-  recordButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 20,
-  },
-  smallButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  buttonLabel: { fontSize: 16, fontWeight: "700", marginTop: 8 },
-  modalOverlayCenter: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: "90%",
-    maxWidth: 400,
-    borderRadius: 20,
-    alignItems: "center",
-  },
-  modalTitle: { fontSize: 22, fontWeight: "800", marginBottom: 10 },
-  teamListScroll: { maxHeight: 250, width: "100%", marginBottom: 10 },
-  teamSelectButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  teamSelectText: { flex: 1, fontSize: 16, fontWeight: "600", marginLeft: 10 },
-  cancelButton: { marginTop: 10, padding: 10 },
-  cancelButtonText: { fontSize: 15, fontWeight: "600" },
+  buttonRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", width: "100%", marginVertical: 8 },
+  recordButton: { width: 80, height: 80, borderRadius: 40, justifyContent: "center", alignItems: "center", marginHorizontal: 20 },
+  smallButton: { width: 60, height: 60, borderRadius: 30, justifyContent: "center", alignItems: "center", marginHorizontal: 10 },
+  buttonLabel: { marginTop: 10, fontSize: 14, fontWeight: "500" },
+  modalOverlayCenter: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { width: "90%", borderRadius: 16 },
+  modalTitle: { fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: 12 },
+  teamListScroll: { maxHeight: 320, width: "100%" },
+  teamSelectButton: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 10 },
+  teamSelectText: { fontSize: 16, fontWeight: "600" },
+  cancelButton: { marginTop: 10, alignSelf: "center" },
+  cancelButtonText: { fontSize: 14, fontWeight: "600" },
 });

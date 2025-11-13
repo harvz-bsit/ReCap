@@ -1,7 +1,6 @@
-import React from "react";
-import { View, Text } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
 import { styles } from "@/app/(drawer)/teams/styles";
+import { MaterialIcons } from "@expo/vector-icons";
+import { Text, View } from "react-native";
 
 export default function MeetingItem({ meeting, theme, getMeetingStatus }: any) {
   const status = getMeetingStatus(meeting.date, meeting.time);
@@ -25,7 +24,16 @@ export default function MeetingItem({ meeting, theme, getMeetingStatus }: any) {
       <View style={{ marginLeft: 10 }}>
         <Text style={[styles.meetingTitle, { color: theme.text }]}>{meeting.title}</Text>
         <Text style={[styles.meetingInfo, { color: theme.secondary }]}>
-          {meeting.date} • {meeting.time}
+          {new Date(meeting.createdAt).toLocaleDateString("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+})}{" "}
+{new Date(meeting.createdAt).toLocaleTimeString("en-US", {
+  hour: "numeric",
+  minute: "numeric",
+  hour12: true,
+})}
         </Text>
         <Text style={{ color: statusColor, fontWeight: "600", fontSize: 13 }}>{status}</Text>
       </View>

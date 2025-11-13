@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { child, get, ref } from "firebase/database";
+import { child, get, onValue, ref } from "firebase/database";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dimensions,
@@ -43,7 +43,9 @@ const getRelativeDate = (dateString: string) => {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-const formatTimeForDisplay = (time24hr: string) => {
+const formatTimeForDisplay = (time24hr?: string) => {
+  if (!time24hr) return ""; // return empty string if no time
+
   const [hours, minutes] = time24hr.split(":").map(Number);
   const date = new Date();
   date.setHours(hours, minutes);
@@ -68,10 +70,10 @@ const MeetingItem = ({ item, theme }: { item: any; theme: any }) => {
         <Ionicons name="videocam-outline" size={22 * scale} color={theme.blue} />
         <View style={styles.meetingTextContainer}>
           <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>
-            {item.title}
+            {item.teamName}
           </Text>
-          <Text style={[styles.cardSub, { color: theme.secondary, marginTop: 2 }]}>
-            {getRelativeDate(item.date)} • {formatTimeForDisplay(item.time)}
+          <Text style={[styles.cardSub, { color: theme.secondary, marginTop: 2 }]}>            
+             {getRelativeDate(item.createdAt)}
           </Text>
         </View>
       </View>
@@ -105,10 +107,10 @@ const TaskItem = ({ item, theme }: { item: any; theme: any }) => {
       <View style={styles.taskItemContent}>
         <Ionicons name="checkbox-outline" size={22 * scale} color={priorityColor} />
         <View style={styles.taskTextContainer}>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>{item.task}</Text>
           <View style={styles.taskFooter}>
             <Text style={[styles.cardSub, { color: theme.secondary }]}>
-              Due: <Text style={{ fontWeight: "600" }}>{getRelativeDate(item.deadline)}</Text>
+             {getRelativeDate(item.createdAt)}
             </Text>
             <View style={[styles.priorityBadge, { backgroundColor: priorityColor }]}>
               <Text style={styles.priorityBadgeText}>{item.status.toUpperCase()}</Text>
@@ -175,45 +177,63 @@ export default function DashboardScreen() {
   }, []);
 
   // ---------------- FETCH TASKS & MEETINGS ----------------
-  useEffect(() => {
-    if (!currentUser?.uid) return;
+useEffect(() => {
+  if (!currentUser?.uid) return;
 
-    const fetchTasksAndMeetings = async () => {
-      try {
-        const snapshot = await get(child(ref(db), "teams"));
-        const teamsData = snapshot.val();
-        if (!teamsData) return;
+  const teamsRef = ref(db, "teams");
 
-        const userId = currentUser.uid;
-        const userTasks: any[] = [];
-        const userMeetings: any[] = [];
+  const unsubscribe = onValue(teamsRef, (snapshot) => {
+    const teamsData = snapshot.val();
+    if (!teamsData) return;
 
-        Object.entries(teamsData).forEach(([teamId, team]: [string, any]) => {
-          if (team.tasks) {
-            Object.values(team.tasks).forEach((task: any) => {
-              if (task.assignedTo === userId)
-                userTasks.push({ ...task, teamId, id: task.id || `${teamId}_${task.title}` });
-            });
-          }
+    const userId = currentUser.uid;
+    const userTasks: any[] = [];
+    const userMeetings: any[] = [];
 
-          if (team.meetings) {
-            Object.values(team.meetings).forEach((meet: any) => {
-              const attendees = meet.attendees || {};
-              if (attendees[userId])
-                userMeetings.push({ ...meet, teamId, status: "Upcoming", id: meet.id || `${teamId}_${meet.title}` });
-            });
-          }
-        });
+    Object.entries(teamsData).forEach(([teamId, data]: [string, any]) => {
+      if (!data.members || !data.members[userId]) return;
 
-        setTasks(userTasks);
-        setMeetings(userMeetings);
-      } catch (error) {
-        console.log("Error fetching tasks/meetings:", error);
-      }
-    };
+      // Tasks
+      const tasksRaw = Object.entries(data.tasks || {}).map(([tid, t]: any) => ({
+        id: tid,
+        task: t.task,
+        assigneeName: t.assigneeName,
+        status: t.status || "Pending",
+        createdAt: t.createdAt,
+        teamId,
+        teamName: data.name,
+      }));
+      const myTasks = tasksRaw.filter(
+        (t) => t.assigneeName === currentUser.firstName + " " + currentUser.lastName
+      );
+      userTasks.push(...myTasks);
 
-    fetchTasksAndMeetings();
-  }, [currentUser]);
+      // Meetings (last 3 days)
+      const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+      const meetingsRaw = Object.entries(data.meetings || {})
+        .map(([mid, m]: any) => ({
+          id: mid,
+          ...m,
+          teamId,
+          teamName: data.name,
+        }))
+        .filter((m) => (m.createdAt || 0) >= threeDaysAgo);
+
+      userMeetings.push(...meetingsRaw);
+    });
+
+    // Sort meetings by createdAt
+    userMeetings.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+    setTasks(userTasks);
+    setMeetings(userMeetings);
+  });
+
+  return () => unsubscribe(); // cleanup listener on unmount
+}, [currentUser]);
+
+
+
 
   // ---------------- NEWS DATA ----------------
   const newsData = [

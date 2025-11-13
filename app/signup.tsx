@@ -1,26 +1,29 @@
 import { Picker } from "@react-native-picker/picker";
 import { useRouter } from "expo-router";
-import { child, get, push, ref } from "firebase/database";
-import React, { useState } from "react";
+import { equalTo, get, orderByChild, push, query, ref } from "firebase/database";
+import React, { useRef, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useColorScheme,
-    View,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View
 } from "react-native";
-import bcrypt from "react-native-bcrypt";
+
+import bcrypt from "bcryptjs";
 import { db } from "../firebase/firebaseConfig";
 
-const LOGO = require("../app/images/recap-logo.png");
 const { width } = Dimensions.get("window");
+
+const WORK_TYPES = ["Professional", "Student", "Business Owner", "Other"];
+const LOGO = require("../app/images/recap-logo.png");
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -29,53 +32,89 @@ export default function SignupScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [nickname, setNickname] = useState("");
   const [workType, setWorkType] = useState("Professional");
   const [loading, setLoading] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
-  const handleSignup = async () => {
-    if (!email || !password || !firstName || !lastName || !nickname || !workType) {
-      return Alert.alert("Error", "Please fill all fields");
-    }
-    setLoading(true);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    try {
-      // Check if email already exists
-      const snapshot = await get(child(ref(db), "users"));
-      const data = snapshot.val();
-      const emailExists = data
-        ? Object.values(data).some((user: any) => user.email === email)
-        : false;
+  const passwordRegex =
+    /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
-      if (emailExists) {
-        Alert.alert("Error", "Email already exists");
-        return;
-      }
+  // Show toast only when leaving the password field with invalid password
+  const handlePasswordBlur = () => {
+    if (password && !passwordRegex.test(password)) {
+      setShowToast(true);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
 
-      // Hash password
-      const salt = bcrypt.genSaltSync(10);
-      const hashedPassword = bcrypt.hashSync(password, salt);
-
-      // Save to DB
-      await push(ref(db, "users"), {
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        nickname,
-        workType,
-      });
-
-      Alert.alert("Success", "Account created successfully!");
-      router.replace("/");
-    } catch (err: any) {
-      Alert.alert("Error", err.message || "Something went wrong");
-    } finally {
-      setLoading(false);
+      // Hide after 2.5 seconds
+      setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setShowToast(false));
+      }, 2500);
     }
   };
+
+  const handleSignup = async () => {
+  if (!email || !password || !confirmPassword || !firstName || !lastName || !nickname) {
+    return Alert.alert("Error", "Please fill all fields");
+  }
+
+  if (!passwordRegex.test(password)) {
+    return Alert.alert(
+      "Weak Password",
+      "Password must be at least 8 characters, include 1 uppercase, 1 number, and 1 symbol."
+    );
+  }
+
+  if (password !== confirmPassword) {
+    return Alert.alert("Error", "Passwords do not match");
+  }
+
+  setLoading(true);
+  try {
+    // Check for existing email
+    const emailQuery = query(ref(db, "users"), orderByChild("email"), equalTo(email.trim().toLowerCase()));
+    const snap = await get(emailQuery);
+    if (snap.exists()) {
+      return Alert.alert("Error", "Email already exists");
+    }
+
+    const uid = push(ref(db, "users")).key as string;
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const userData = {
+      id: uid,
+      email: email.trim().toLowerCase(),
+      password: hashedPassword,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      nickname: nickname.trim(),
+      workType,
+      department: "IT",
+    };
+
+    await set(ref(db, `users/${uid}`), userData);
+    Alert.alert("Success", "Account created successfully!");
+    router.replace("/");
+  } catch (err: any) {
+    Alert.alert("Error", err.message || "Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const theme = {
     bg: isDark ? "#121212" : "#F4F8FB",
@@ -88,10 +127,8 @@ export default function SignupScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Logo */}
         <View style={styles.logoWrapper}>
           <Image source={LOGO} style={styles.logo} resizeMode="contain" />
         </View>
@@ -140,6 +177,16 @@ export default function SignupScreen() {
             secureTextEntry
             value={password}
             onChangeText={setPassword}
+            onBlur={handlePasswordBlur}
+          />
+
+          <TextInput
+            placeholder="Confirm Password"
+            placeholderTextColor={isDark ? "#888" : "#aaa"}
+            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
           />
 
           <View style={[styles.pickerContainer, { backgroundColor: theme.inputBg }]}>
@@ -169,19 +216,85 @@ export default function SignupScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* ✅ Toast for Password Standards */}
+        {showToast && (
+          <Animated.View
+            style={[
+              styles.toast,
+              {
+                opacity: fadeAnim,
+                transform: [
+                  {
+                    translateY: fadeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.toastText}>
+              Password must include:{"\n"}• 8+ chars • 1 uppercase • 1 number • 1 symbol
+            </Text>
+          </Animated.View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  logoWrapper: { width: width * 0.4, height: width * 0.4, marginBottom: 20 },
-  logo: { width: "100%", height: "100%" },
-  card: { width: "100%", borderRadius: 16, padding: 24, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 6 },
-  title: { fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 24 },
-  input: { borderRadius: 12, padding: 12, marginVertical: 8, fontSize: 16 },
-  pickerContainer: { borderRadius: 12, marginVertical: 8 },
-  button: { borderRadius: 12, paddingVertical: 14, marginTop: 16 },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" },
+  container: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  logoWrapper: {
+    width: width * 0.4,
+    height: width * 0.4,
+    marginBottom: 20,
+  },
+  logo: {
+    width: "100%",
+    height: "100%",
+  },
+  card: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  input: {
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 16,
+  },
+  pickerContainer: {
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  button: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
+    textAlign: "center",
+  },
 });
