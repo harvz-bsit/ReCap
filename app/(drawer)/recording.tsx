@@ -48,8 +48,8 @@ const useAdaptivePadding = () => {
   };
 };
 
-// =================================================================
-// 🧠 HELPER: Levenshtein Distance (Fuzzy Match)
+/// =================================================================
+// 🧠 HELPER: Levenshtein Distance + Similarity
 // =================================================================
 function levenshtein(a: string, b: string): number {
   const dp = Array.from({ length: a.length + 1 }, () =>
@@ -70,26 +70,43 @@ function levenshtein(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
+function similarity(a: string, b: string) {
+  const distance = levenshtein(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  return 1 - distance / maxLen;
+}
+
 function findClosestMember(
   assigneeName: string,
   members: Record<string, any>
 ) {
-  assigneeName = assigneeName.toLowerCase();
-  const threshold = 2; // Max allowed distance
-  let bestMatch: any = null;
-  let bestDistance = Infinity;
+  assigneeName = assigneeName.toLowerCase().trim();
+  const threshold = 0.7; // 70% similarity required
+  let bestMatch: { uid: string; name: string } | null = null;
+  let bestScore = 0;
 
   for (const [uid, member] of Object.entries(members)) {
-    const memberName = member.name.toLowerCase();
-    const distance = levenshtein(assigneeName, memberName);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestMatch = { uid, name: member.name };
+    const memberName = member.name.toLowerCase().trim();
+
+    // Split into first and last names
+    const assigneeParts = assigneeName.split(" ");
+    const memberParts = memberName.split(" ");
+
+    // Compare against full name and individual parts
+    const namesToCompare = [memberName, ...memberParts];
+
+    for (const name of namesToCompare) {
+      const score = similarity(assigneeName, name);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { uid, name: member.name };
+      }
     }
   }
 
-  return bestDistance <= threshold ? bestMatch : null;
+  return bestScore >= threshold ? bestMatch : null;
 }
+
 
 // =================================================================
 // 🚀 MAIN COMPONENT
@@ -99,6 +116,7 @@ export default function RecordScreen() {
   const isDark = scheme === "dark";
   const adaptive = useAdaptivePadding();
 
+  
   // STATE
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -229,7 +247,7 @@ export default function RecordScreen() {
       const formData = new FormData();
       formData.append("file", { uri, type: "audio/m4a", name: "recording.m4a" } as any);
 
-      const response = await fetch("http://192.168.100.2:3000/transcribe", {
+      const response = await fetch("https://recap-buz6.onrender.com/transcribe", {
         method: "POST",
         body: formData,
         headers: { "Content-Type": "multipart/form-data" },
@@ -255,68 +273,71 @@ export default function RecordScreen() {
   // ✅ Save to Firebase with Full Name Fallback
   // =================================================================
   const handleSaveToTeam = async (team: Team) => {
-    try {
-      if (!summaryData.summary) return;
+  try {
+    if (!summaryData.summary) return;
 
-      // -------------------------------
-      // 1️⃣ Save Meeting Summary
-      // -------------------------------
-      const newMeetingRef = push(ref(db, `teams/${team.id}/meetings`));
-      await set(newMeetingRef, {
-        createdBy: currentUserUid,
-        createdAt: Date.now(),
-        status: "completed",
-        summary: summaryData.summary,
-      });
+    // -------------------------------
+    // 1️⃣ Save Meeting Summary
+    // -------------------------------
+    const newMeetingRef = push(ref(db, `teams/${team.id}/meetings`));
+    await set(newMeetingRef, {
+      createdBy: currentUserUid,
+      createdAt: Date.now(),
+      status: "completed",
+      summary: summaryData.summary,
+    });
 
-      // -------------------------------
-      // 2️⃣ Save Tasks
-      // -------------------------------
-      if (summaryData.tasks && summaryData.tasks.length > 0) {
-        for (const task of summaryData.tasks) {
-          // Assign to everyone if "everyone" mentioned
-          if (task.assigneeName?.toLowerCase().includes("everyone")) {
-            for (const [uid, member] of Object.entries(team.members)) {
-              const taskRef = push(ref(db, `teams/${team.id}/tasks`));
-              await set(taskRef, {
-                task: task.text,
-                status: "pending",
-                assignee: uid,
-                assigneeName: member.name,
-                createdAt: Date.now(),
-              });
-            }
-            continue;
-          }
-
-          // Assign to closest matching member
-          let assigned: { uid: string; name: string } | null = null;
-          if (task.assigneeName) {
-            const match = findClosestMember(task.assigneeName, team.members);
-            if (match) assigned = match;
-          }
-
-          const taskRef = push(ref(db, `teams/${team.id}/tasks`));
-          await set(taskRef, {
-            task: task.text,
-            status: "pending",
-            createdAt: Date.now(),
-            assignee: assigned?.uid || null,
-            assigneeName: assigned?.name || task.assigneeName, // <-- store full name fallback
-          });
-        }
+    // -------------------------------
+    // 2️⃣ Save Tasks
+    // -------------------------------
+    // -------------------------------
+// 2️⃣ Save Tasks
+// -------------------------------
+if (summaryData.tasks && summaryData.tasks.length > 0) {
+  for (const task of summaryData.tasks) {
+    // Assign to everyone if "everyone" mentioned
+    if (task.assigneeName?.toLowerCase().includes("everyone")) {
+      for (const [uid, member] of Object.entries(team.members)) {
+        const taskRef = push(ref(db, `teams/${team.id}/tasks`));
+        await set(taskRef, {
+          task: task.text,
+          status: "pending",
+          assignee: uid,
+          assigneeName: member.name,
+          createdAt: Date.now(),
+        });
       }
-
-      setShowSaveModal(false);
-      setSeconds(0);
-      setStatus("ready");
-      setIsSummaryReady(false);
-      setTranscriptionText(`✅ Saved meeting summary and tasks to ${team.name}.`);
-    } catch (error) {
-      console.error("Error saving to RTDB:", error);
-      Alert.alert("Error", "Failed to save meeting and tasks to database.");
+      continue;
     }
-  };
+
+    // Assign to closest matching member
+    let assigned: { uid: string; name: string } | null = null;
+    if (task.assigneeName) {
+      assigned = findClosestMember(task.assigneeName, team.members);
+    }
+
+    const taskRef = push(ref(db, `teams/${team.id}/tasks`));
+    await set(taskRef, {
+      task: task.text,
+      status: "pending",
+      createdAt: Date.now(),
+      assignee: assigned?.uid || null,
+      assigneeName: assigned?.name || null, // <-- null if no match
+    });
+  }
+}
+
+    setShowSaveModal(false);
+    setSeconds(0);
+    setStatus("ready");
+    setIsSummaryReady(false);
+    setTranscriptionText(`✅ Saved meeting summary and tasks to ${team.name}.`);
+  } catch (error) {
+    console.error("Error saving to RTDB:", error);
+    Alert.alert("Error", "Failed to save meeting and tasks to database.");
+  }
+};
+
 
   const handleCancelSave = () => {
     setShowSaveModal(false);
