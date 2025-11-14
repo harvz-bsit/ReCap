@@ -48,8 +48,7 @@ export default function SignupScreen() {
   // ----------------- PASSWORD TOAST -----------------
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [showToast, setShowToast] = useState(false);
-  const passwordRegex =
-    /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
   const theme = {
     bg: isDark ? "#121212" : "#F4F8FB",
@@ -59,7 +58,6 @@ export default function SignupScreen() {
     button: "#1976D2",
   };
 
-  // ----------------- PASSWORD TOAST -----------------
   const handlePasswordBlur = () => {
     if (password && !passwordRegex.test(password)) {
       setShowToast(true);
@@ -70,74 +68,54 @@ export default function SignupScreen() {
     }
   };
 
-  // Inside sendOtp
-const sendOtp = async () => {
-  if (!email) return Alert.alert("Error", "Please enter an email first");
-  setOtpLoading(true);
-  console.log("[SEND OTP] Sending OTP to:", email);
+  // ----------------- SEND OTP -----------------
+  const sendOtp = async () => {
+    setOtpLoading(true);
+    try {
+      const response = await fetch("https://recap-1.onrender.com/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
 
-  try {
-    const response = await fetch("https://recap-1.onrender.com/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim().toLowerCase() }),
-    });
-
-    console.log("[SEND OTP] Response status:", response.status);
-
-    const data = await response.json();
-    console.log("[SEND OTP] Response data:", data);
-
-    if (data.success) {
-      console.log("[SEND OTP] OTP sent successfully");
-      setOtpSent(true);
-      setOtpModalVisible(true);
-      Alert.alert("OTP Sent", "Check your email for the OTP");
-    } else {
-      console.log("[SEND OTP] OTP failed:", data.error);
-      throw new Error(data.error || "Failed to send OTP");
+      const data = await response.json(); // fixed JSON parsing
+      if (data.success) {
+        setOtpSent(true);
+        setOtpModalVisible(true);
+        Alert.alert("OTP Sent", "Check your email for the OTP");
+      } else {
+        throw new Error(data.error || "Failed to send OTP");
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Something went wrong");
+    } finally {
+      setOtpLoading(false);
     }
-  } catch (err: any) {
-    console.log("[SEND OTP] Error:", err.message);
-    Alert.alert("Error", err.message || "Something went wrong");
-  } finally {
-    setOtpLoading(false);
-  }
-};
+  };
 
-// Inside verifyOtp
-const verifyOtp = async () => {
-  if (!otpCode) return Alert.alert("Error", "Please enter the OTP");
-  setOtpLoading(true);
-  console.log("[VERIFY OTP] Verifying OTP:", otpCode, "for email:", email);
+  // ----------------- VERIFY OTP -----------------
+  const verifyOtp = async () => {
+    setOtpLoading(true);
+    try {
+      const response = await fetch("https://recap-1.onrender.com/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otpCode }),
+      });
 
-  try {
-    const response = await fetch("https://recap-1.onrender.com/verify-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otpCode }),
-    });
-
-    console.log("[VERIFY OTP] Response status:", response.status);
-
-    const data = await response.json();
-    console.log("[VERIFY OTP] Response data:", data);
-
-    if (data.success) {
-      console.log("[VERIFY OTP] OTP verified successfully");
-      setOtpModalVisible(false);
-      completeSignup();
-    } else {
-      console.log("[VERIFY OTP] OTP verification failed:", data.error);
-      throw new Error(data.error || "OTP invalid");
+      const data = await response.json(); // fixed JSON parsing
+      if (data.success) {
+        setOtpModalVisible(false);
+        completeSignup();
+      } else {
+        throw new Error(data.error || "Invalid OTP");
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Something went wrong");
+    } finally {
+      setOtpLoading(false);
     }
-  } catch (err: any) {
-    console.log("[VERIFY OTP] Error:", err.message);
-    Alert.alert("Error", err.message || "Something went wrong");
-  } finally {
-    setOtpLoading(false);
-  }
-};
+  };
 
   // ----------------- COMPLETE SIGNUP -----------------
   const completeSignup = async () => {
@@ -184,7 +162,6 @@ const verifyOtp = async () => {
 
   // ----------------- INITIAL SIGNUP BUTTON -----------------
   const handleSignup = async () => {
-    // Validate fields
     if (!email || !password || !confirmPassword || !firstName || !lastName || !nickname) {
       return Alert.alert("Error", "Please fill all fields");
     }
@@ -196,7 +173,7 @@ const verifyOtp = async () => {
     }
     if (password !== confirmPassword) return Alert.alert("Error", "Passwords do not match");
 
-    await sendOtp(); // send OTP and show modal
+    await sendOtp();
   };
 
   // ----------------- UI -----------------
@@ -211,10 +188,15 @@ const verifyOtp = async () => {
           <Text style={[styles.title, { color: theme.text }]}>Sign Up</Text>
 
           <TextInput placeholder="First Name" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} value={firstName} onChangeText={setFirstName} />
+
           <TextInput placeholder="Last Name" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} value={lastName} onChangeText={setLastName} />
+
           <TextInput placeholder="Nickname" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} value={nickname} onChangeText={setNickname} />
+
           <TextInput placeholder="Email" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+
           <TextInput placeholder="Password" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} secureTextEntry value={password} onChangeText={setPassword} onBlur={handlePasswordBlur} />
+
           <TextInput placeholder="Confirm Password" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
 
           <View style={[styles.pickerContainer, { backgroundColor: theme.inputBg }]}>
