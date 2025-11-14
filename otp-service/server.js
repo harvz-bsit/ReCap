@@ -1,59 +1,53 @@
 import cors from "cors";
-import dotenv from "dotenv";
 import express from "express";
 import nodemailer from "nodemailer";
-
-dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// In-memory OTP store
-const otpStore = {}; // { email: { otp: "123456", expiresAt: 1234567890 } }
+// ----------------- IN-MEMORY OTP STORE -----------------
+const otpStore = {}; // { email: { otp: "123456", expiresAt: timestamp } }
 
-// Configure email transporter
+// ----------------- SENDGRID TRANSPORTER -----------------
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: "SendGrid",
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: "apikey", // this is literal "apikey"
+    pass: process.env.SENDGRID_API_KEY,
   },
 });
 
-// Generate 6-digit OTP
+// ----------------- OTP GENERATOR -----------------
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Send OTP endpoint
+// ----------------- SEND OTP -----------------
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
-  console.log("[SERVER] /send-otp called with email:", email);
-
   if (!email) return res.status(400).json({ error: "Email required" });
 
   const otp = generateOTP();
-  otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 }; // 5 min expiry
-  console.log("[SERVER] Generated OTP:", otp);
+  otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 }; // 5 minutes
 
   try {
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM, // must be verified in SendGrid
       to: email,
       subject: "Your OTP Code",
       text: `Your OTP is: ${otp}. It expires in 5 minutes.`,
     });
-    console.log("[SERVER] Email sent:", info.response);
+
+    console.log(`[SERVER] OTP sent to ${email}: ${otp}`);
     res.json({ success: true });
   } catch (err) {
-    console.error("[SERVER] Failed to send email:", err);
+    console.error("[SERVER] Failed to send OTP:", err);
     res.status(500).json({ error: "Failed to send OTP" });
   }
 });
 
-
-// Verify OTP endpoint
+// ----------------- VERIFY OTP -----------------
 app.post("/verify-otp", (req, res) => {
   const { email, otp } = req.body;
   const record = otpStore[email];
@@ -65,9 +59,9 @@ app.post("/verify-otp", (req, res) => {
   }
   if (record.otp !== otp) return res.status(400).json({ success: false, message: "OTP incorrect" });
 
-  delete otpStore[email]; // OTP verified, remove it
+  delete otpStore[email]; // verified
   res.json({ success: true });
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`OTP service running on port ${PORT}`));
+app.listen(PORT, () => console.log(`[SERVER] OTP service running on port ${PORT}`));
