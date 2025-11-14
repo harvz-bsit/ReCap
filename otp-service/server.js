@@ -29,24 +29,29 @@ function generateOTP() {
 // Send OTP endpoint
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
+  console.log("[SERVER] /send-otp called with email:", email);
+
   if (!email) return res.status(400).json({ error: "Email required" });
 
   const otp = generateOTP();
   otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 }; // 5 min expiry
+  console.log("[SERVER] Generated OTP:", otp);
 
   try {
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Your OTP Code",
       text: `Your OTP is: ${otp}. It expires in 5 minutes.`,
     });
+    console.log("[SERVER] Email sent:", info.response);
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("[SERVER] Failed to send email:", err);
     res.status(500).json({ error: "Failed to send OTP" });
   }
 });
+
 
 // Verify OTP endpoint
 app.post("/verify-otp", (req, res) => {
