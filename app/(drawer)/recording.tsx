@@ -116,7 +116,7 @@ export default function RecordScreen() {
   const isDark = scheme === "dark";
   const adaptive = useAdaptivePadding();
 
-  
+
   // STATE
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
