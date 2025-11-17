@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react";
 import {
   Image,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { db } from "../../firebase/firebaseConfig";
+
 
 /* Drawer wrappers */
 const DrawerContentScrollView = ({ children, style, contentContainerStyle }) => (
@@ -80,6 +82,8 @@ export default function CustomDrawer(props: any) {
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
 
   /* ✅ Load User */
   useEffect(() => {
@@ -245,6 +249,163 @@ const pickImageFromGallery = async () => {
         </View>
 
         <View style={styles.spacer} />
+
+        {/* SUBSCRIPTION SECTION */}
+<View
+  style={{
+    backgroundColor: theme.activeBG,
+    marginHorizontal: 15,
+    padding: 18,
+    borderRadius: 14,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: theme.border,
+  }}
+>
+  <Text
+    style={{
+      color: theme.text,
+      fontSize: 18,
+      fontWeight: "700",
+      marginBottom: 6,
+    }}
+  >
+    Recap AI Subscriptions
+  </Text>
+
+  <Text
+    style={{
+      color: theme.darkBlue,
+      fontSize: 14,
+      marginBottom: 12,
+    }}
+  >
+    Unlock unlimited AI minutes, faster processing, 
+    premium recording tools, and exclusive features by
+    subscribing to our plans.
+  </Text>
+
+  <TouchableOpacity
+    style={{
+      backgroundColor: theme.blue,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: "center",
+    }}
+    onPress={() => setShowUpgradeModal(true)}
+  >
+    <Text
+      style={{
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "700",
+      }}
+    >
+      Upgrade my ReCAP AI Free
+    </Text>
+  </TouchableOpacity>
+</View>
+
+{/* UPGRADE MODAL */}
+<Modal visible={showUpgradeModal} transparent animationType="fade">
+  <View
+    style={[
+      styles.modalOverlay,
+      { backgroundColor: theme.modalOverlay, paddingBottom: insets.bottom },
+    ]}
+  >
+    <View
+      style={[
+        styles.upgradeModalBox,
+        { backgroundColor: theme.modalBG, maxHeight: "85%", position: "relative" },
+      ]}
+    >
+      {/* CLOSE BUTTON - placed outside ScrollView so it stays fixed */}
+      <TouchableOpacity
+        onPress={() => setShowUpgradeModal(false)}
+        style={[
+          styles.profileModalClose,
+          { top: 12, right: 12, zIndex: 20, padding: 8, borderRadius: 20 },
+        ]}
+      >
+        <Ionicons name="close" size={22} color={theme.blue} />
+      </TouchableOpacity>
+
+      {/* SCROLLABLE CONTENT */}
+      <ScrollView
+        style={{ width: "100%" }}
+        contentContainerStyle={{
+          paddingBottom: Math.max(30, insets.bottom + 10),
+          alignItems: "center",
+          paddingTop: 12, // leave room for the fixed close button
+        }}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <Text style={[styles.upgradeTitle, { color: theme.text }]}>
+          Choose Your ReCap AI Plan
+        </Text>
+
+        <Text style={[styles.upgradeSubtitle, { color: theme.darkBlue }]}>
+          Compare plans and unlock powerful AI tools.
+        </Text>
+
+        {/* PLAN OPTIONS */}
+        <View style={{ width: "100%", marginTop: 10, paddingBottom: 6 }}>
+          {/* FREE PLAN */}
+          <View style={[styles.planCard, { borderColor: theme.border }]}>
+            <Text style={[styles.planTitle, { color: theme.blue }]}>ReCap AI Free Plan</Text>
+            <Text style={[styles.planPrice, { color: theme.text }]}>₱0 / month</Text>
+            <Text style={[styles.planFeatures, { color: theme.darkBlue }]}>
+              • Maximum of 10 minutes recorded meeting{"\n"}
+              • Maximum of 3 teams{"\n"}
+              • Limited team members only{"\n"}
+              • Standard processing{"\n"}
+
+            </Text>
+          </View>
+
+          {/* PREMIUM */}
+          <View style={[styles.planCard, { borderColor: theme.blue }]}>
+            <Text style={[styles.planTitle, { color: theme.blue }]}>
+              ReCap AI Premium
+            </Text>
+            <Text style={[styles.planPrice, { color: theme.text }]}>₱149 / month</Text>
+            <Text style={[styles.planFeatures, { color: theme.darkBlue }]}>
+              • Maximum of 45 minutes{"\n"}
+              • Maximum of 10 teams{"\n"}
+              • Faster processing{"\n"}
+              • Unlimited members
+            </Text>
+
+            <TouchableOpacity style={[styles.planBtn, { backgroundColor: theme.blue }]}>
+              <Text style={styles.planBtnText}>Upgrade to Premium</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* SUBSCRIBED PLAN */}
+          <View style={[styles.planCard, { borderColor: "#8E24AA" }]}>
+            <Text style={[styles.planTitle, { color: "#8E24AA" }]}>
+              ReCap AI SyncScribed
+            </Text>
+            <Text style={[styles.planPrice, { color: theme.text }]}>₱249 / month</Text>
+            <Text style={[styles.planFeatures, { color: theme.darkBlue }]}>
+              • Maximum of 2 hours{"\n"}
+              • Unlimited teams{"\n"}
+              • Unlimited members{"\n"}
+              • Smarter AI
+            </Text>
+
+            <TouchableOpacity style={[styles.planBtn, { backgroundColor: "#8E24AA" }]}>
+              <Text style={styles.planBtnText}>Get Subscribed Plan</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
+
 
         {/* LOGOUT */}
         <TouchableOpacity
@@ -458,4 +619,60 @@ const styles = StyleSheet.create({
   },
 
   profileButtonText: { fontSize: 16, fontWeight: "600", marginLeft: 10 },
+
+upgradeModalBox: {
+  width: "90%",
+  borderRadius: 18,
+  padding: 20,
+  alignItems: "center",
+},
+
+upgradeTitle: {
+  fontSize: 20,
+  fontWeight: "800",
+  marginTop: 10,
+},
+
+upgradeSubtitle: {
+  fontSize: 14,
+  marginBottom: 15,
+  textAlign: "center",
+},
+
+planCard: {
+  padding: 18,
+  borderWidth: 1.5,
+  borderRadius: 14,
+  marginBottom: 15,
+},
+
+planTitle: {
+  fontSize: 18,
+  fontWeight: "700",
+},
+
+planPrice: {
+  fontSize: 22,
+  fontWeight: "800",
+  marginVertical: 6,
+},
+
+planFeatures: {
+  fontSize: 14,
+  marginBottom: 12,
+},
+
+planBtn: {
+  paddingVertical: 10,
+  borderRadius: 10,
+  alignItems: "center",
+  marginTop: 5,
+},
+
+planBtnText: {
+  color: "#fff",
+  fontWeight: "700",
+  fontSize: 16,
+},
+
 });

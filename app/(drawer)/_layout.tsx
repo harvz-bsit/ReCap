@@ -43,7 +43,7 @@ export default function DrawerLayout() {
                 <Ionicons name="menu" size={24} color={theme.text} />
               </TouchableOpacity>
 
-              <Text style={[styles.headerText, { color: theme.text }]}>ReCap</Text>
+              <Text style={[styles.headerText, { color: theme.text }]}>ReCap AI</Text>
 
               <View style={{ width: 40 }} />
             </View>

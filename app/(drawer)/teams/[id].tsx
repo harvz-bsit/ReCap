@@ -9,11 +9,10 @@ import {
   Image,
   Linking,
   Modal,
-  ScrollView,
-  Text,
+  ScrollView, StyleSheet, Text,
   TouchableOpacity,
   useColorScheme,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -58,6 +57,42 @@ export default function TeamDetailsScreen() {
     }),
     [isDark]
   );
+
+  const reusableStyles = StyleSheet.create({
+  // base container for solid danger buttons (shared)
+  dangerBase: {
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+  // small square icon button (remove member)
+  dangerIconSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 15,
+  },
+  // full-width danger button (leave team)
+  dangerFullWidth: {
+    padding: 12,
+    width: "100%",
+    marginTop: 20,
+    marginBottom: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+  dangerText: {
+    color: "#FFF",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+});
+
 
   const exportTasksToGoogleCalendar = () => {
   taskList.forEach((task) => {
@@ -217,6 +252,7 @@ export default function TeamDetailsScreen() {
         }
       }
       setShowLeaveConfirm(false);
+      setTeam(null);
       router.replace("/(drawer)/teams");
     } catch (err) {
       console.error(err);
@@ -227,9 +263,19 @@ export default function TeamDetailsScreen() {
   const handleRemoveMember = async () => {
     if (!removeMemberUID || !team) return;
     try {
-      await remove(ref(db, `teams/${team.id}/members/${removeMemberUID}`));
-      setRemoveMemberUID(null);
-      setShowRemoveConfirm(false);
+await remove(ref(db, `teams/${team.id}/members/${removeMemberUID}`));
+
+setTeam((prev) => ({
+  ...prev,
+  members: prev.members.filter((_, index) => Object.keys(prev.rawMembers)[index] !== removeMemberUID),
+  rawMembers: Object.fromEntries(
+    Object.entries(prev.rawMembers).filter(([uid]) => uid !== removeMemberUID)
+  ),
+}));
+
+setRemoveMemberUID(null);
+setShowRemoveConfirm(false);
+
     } catch (err) {
       console.error(err);
       Alert.alert("Error", "Failed to remove member.");
@@ -305,7 +351,7 @@ export default function TeamDetailsScreen() {
           <TouchableOpacity key={m.id} onPress={() => openMeetingModal(m)}>
             <MeetingItem meeting={m} theme={theme} getMeetingStatus={() => ""} />
           </TouchableOpacity>
-        )) : <Text style={{ color: theme.secondary, marginVertical: 8 }}>No meetings scheduled.</Text>}
+        )) : <Text style={[styles.noItemsText,{ color: theme.secondary }]}>No meetings yet.</Text>}
 
        <TouchableOpacity
   style={[styles.exportButton, { backgroundColor: theme.accent, marginTop: 16 }]}
@@ -444,57 +490,55 @@ export default function TeamDetailsScreen() {
 
               {/* Remove Button */}
               {isCreator && !isMemberCreator && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setRemoveMemberUID(memberUID);
-                    setShowRemoveConfirm(true);
-                  }}
-                  style={{
-                    backgroundColor: theme.danger,
-                    paddingVertical: 4,
-                    paddingHorizontal: 10,
-                    borderRadius: 5,
-                    marginRight: 15,
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "600" }}>-</Text>
-                </TouchableOpacity>
+<TouchableOpacity
+  onPress={() => {
+    setRemoveMemberUID(memberUID);
+    setShowRemoveConfirm(true);
+  }}
+  style={[
+    reusableStyles.dangerIconSmall,
+    reusableStyles.dangerBase,
+    { backgroundColor: theme.danger },
+  ]}
+>
+  <Ionicons name="person-remove-outline" size={20} color="#fff" />
+</TouchableOpacity>
+
+
               )}
             </View>
           );
         })}
 
-        {/* Leave / Delete Team */}
-        <TouchableOpacity
-          style={{
-            borderColor: theme.danger,
-            backgroundColor: theme.dangerBg,
-            marginTop: 20,
-            marginBottom: 20,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 12,
-            borderRadius: 10,
-            borderWidth: 1,
-          }}
-          onPress={() => setShowLeaveConfirm(true)}
-        >
-          <Ionicons name="log-out-outline" size={22} color={theme.danger} />
-          <Text
-            style={{
-              color: theme.danger,
-              fontWeight: "600",
-              marginLeft: 8,
-            }}
-          >
-            {isCreator && team?.rawMembers
-              ? Object.keys(team.rawMembers).length <= 1
-                ? "Delete Team"
-                : "Leave Team"
-              : "Leave Team"}
-          </Text>
-        </TouchableOpacity>
+<TouchableOpacity
+  style={{
+    backgroundColor: theme.danger,
+    marginTop: 20,
+    marginBottom: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 10,
+  }}
+  onPress={() => setShowLeaveConfirm(true)}
+>
+  <Ionicons name="log-out-outline" size={22} color="#FFF" />
+  <Text
+    style={{
+      color: "#FFF",
+      fontWeight: "600",
+      marginLeft: 8,
+    }}
+  >
+    {isCreator && team?.rawMembers
+      ? Object.keys(team.rawMembers).length <= 1
+        ? "Delete Team"
+        : "Leave Team"
+      : "Leave Team"}
+  </Text>
+</TouchableOpacity>
+
       </ScrollView>
     </View>
   </View>

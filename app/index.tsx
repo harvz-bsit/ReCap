@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
 import { child, get, ref } from "firebase/database";
 import React, { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+
 import {
   Alert,
   Dimensions,
@@ -32,6 +34,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
+
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
@@ -105,10 +109,12 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: theme.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+<KeyboardAvoidingView
+  style={{ flex: 1, backgroundColor: theme.bg }}
+  behavior={Platform.OS === "ios" ? "padding" : "height"}
+  keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+>
+
       <ScrollView
         contentContainerStyle={[
           styles.container,
@@ -119,18 +125,20 @@ export default function LoginScreen() {
       >
         {/* Login Card */}
         <View style={[styles.card, { backgroundColor: theme.card }]}>
-          {/* Logo Inside Card */}
-          <View style={styles.logoWrapper}>
-            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-          </View>
+<View style={styles.logoWrapper}>
+  <Image source={LOGO} style={styles.logo} />
+</View>
+
+
+
 
           {/* Quote Inside Card */}
           <Text style={[styles.quoteText, { color: theme.quote }]}>
-            “Stay consistent — progress takes time.”
+            AI-powered meeting summaries and task extraction, all in one place.
           </Text>
 
           {/* Title */}
-          <Text style={[styles.title, { color: theme.text }]}>Login</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Login to ReCap</Text>
 
           {/* Email Input */}
           <TextInput
@@ -146,18 +154,42 @@ export default function LoginScreen() {
             onChangeText={setEmail}
           />
 
-          {/* Password Input */}
-          <TextInput
-            placeholder="Password"
-            placeholderTextColor={isDark ? "#888" : "#aaa"}
-            style={[
-              styles.input,
-              { backgroundColor: theme.inputBg, color: theme.text },
-            ]}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+{/* Password Input with Show/Hide Toggle */}
+<View style={{ width: "100%", position: "relative" }}>
+  <TextInput
+    placeholder="Password"
+    placeholderTextColor={isDark ? "#888" : "#aaa"}
+    style={[
+      styles.input,
+      {
+        backgroundColor: theme.inputBg,
+        color: theme.text,
+        paddingRight: 45, // space for eye icon
+      },
+    ]}
+    secureTextEntry={!showPassword}
+    value={password}
+    onChangeText={setPassword}
+  />
+
+  {/* Eye Icon */}
+  <TouchableOpacity
+    onPress={() => setShowPassword(!showPassword)}
+    style={{
+      position: "absolute",
+      right: 12,
+      top: 22,
+      padding: 4,
+    }}
+  >
+    <Ionicons
+      name={showPassword ? "eye" : "eye-off"}
+      size={22}
+      color={isDark ? "#bbb" : "#555"}
+    />
+  </TouchableOpacity>
+</View>
+
 
           {/* Login Button */}
           <TouchableOpacity
@@ -206,20 +238,22 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  logoWrapper: {
-    backgroundColor: "#1976D2",
-    borderRadius: 30,
-    padding: 18,
-    width: width * 0.5,
-    height: width * 0.35,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  logo: {
-    width: "100%",
-    height: "75%",
-  },
+logoWrapper: {
+  backgroundColor: "#1976D2",   // Blue branding color
+  borderRadius: 20,
+  padding: 18,
+  width: width * 0.55,
+  height: width * 0.3,
+  justifyContent: "center",
+  alignItems: "center",
+  marginBottom: 25,
+  shadowColor: "#000",
+shadowOpacity: 0.15,
+shadowRadius: 8,
+elevation: 5,
+
+},
+
   quoteText: {
     fontSize: 15,
     textAlign: "center",
@@ -228,12 +262,12 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     paddingHorizontal: 10,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 24,
-  },
+title: {
+  fontSize: 26,
+  fontWeight: "700",
+  marginBottom: 20,
+},
+
   input: {
     borderRadius: 14,
     padding: 14,
@@ -253,4 +287,13 @@ const styles = StyleSheet.create({
     fontSize: 17,
     textAlign: "center",
   },
+
+logo: {
+  width: "90%",
+  height: "90%",
+  resizeMode: "contain",
+},
+
+
+
 });

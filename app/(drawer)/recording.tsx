@@ -177,18 +177,20 @@ export default function RecordScreen() {
       const data = snapshot.val() || {};
       const list: Team[] = [];
       Object.entries(data).forEach(([id, teamData]: [string, any]) => {
-        if (teamData.members && currentUserUid in teamData.members) {
-          list.push({
-            id,
-            name: teamData.name,
-            overview: teamData.overview,
-            members: teamData.members,
-            tasks: teamData.tasks || {},
-            meetings: teamData.meetings || {},
-            joinCode: teamData.joinCode,
-            creatorUID: teamData.creatorUID,
-          });
-        }
+ // Only show teams where the user is the creator
+if (teamData.creatorUID === currentUserUid) {
+  list.push({
+    id,
+    name: teamData.name,
+    overview: teamData.overview,
+    members: teamData.members,
+    tasks: teamData.tasks || {},
+    meetings: teamData.meetings || {},
+    joinCode: teamData.joinCode,
+    creatorUID: teamData.creatorUID,
+  });
+}
+
       });
       setTeams(list);
     });

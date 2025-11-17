@@ -22,6 +22,7 @@ const { width, height } = Dimensions.get("window");
 const scale = width / 390;
 const verticalScale = height / 844;
 
+
 const getTheme = (isDark: boolean) => ({
   bg: isDark ? "#121212" : "#F4F8FB",
   card: isDark ? "#1E1E1E" : "#FFFFFF",
@@ -56,71 +57,85 @@ const formatTimeForDisplay = (time24hr?: string) => {
   });
 };
 
-// ---------------- Meeting Item ----------------
 const MeetingItem = ({ item, theme }: { item: any; theme: any }) => {
-  const statusColor =
-    item.status === "Completed"
-      ? "#16A34A"
-      : item.status === "Upcoming"
-      ? theme.blue
-      : "#E53935";
+  const formattedDate = getRelativeDate(item.createdAt);
+  const formattedTime = formatTimeForDisplay(item.time); // <-- capture time
+
   return (
     <View style={[styles.miniCard, { backgroundColor: theme.lightCard }]}>
       <View style={styles.meetingItemDetails}>
         <Ionicons name="videocam-outline" size={22 * scale} color={theme.blue} />
+
         <View style={styles.meetingTextContainer}>
-          <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>
+          <Text
+            style={[styles.cardTitle, { color: theme.text }]}
+            numberOfLines={1}
+          >
             {item.teamName}
           </Text>
-          <Text style={[styles.cardSub, { color: theme.secondary, marginTop: 2 }]}>            
-             {getRelativeDate(item.createdAt)}
+
+          {/* DATE + TIME */}
+          <Text
+            style={[styles.cardSub, { color: theme.secondary, marginTop: 2 }]}
+          >
+            {formattedDate}
+            {formattedTime ? ` • ${formattedTime}` : ""}
           </Text>
         </View>
-      </View>
-      <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-        <Text style={styles.statusBadgeText}>{item.status.toUpperCase()}</Text>
       </View>
     </View>
   );
 };
 
-// ---------------- Task Item ----------------
+
 const TaskItem = ({ item, theme }: { item: any; theme: any }) => {
-  const priorityColor =
+  const statusColor =
     item.status === "Pending"
       ? "#E53935"
+      : item.status === "Completed"
+      ? "#16A34A"
       : item.status === "In Progress"
       ? "#FB8C00"
       : theme.secondary;
+
   return (
-    <View
-      style={[
-        styles.miniCard,
-        {
-          backgroundColor: theme.lightCard,
-          borderLeftWidth: item.status === "Pending" ? 4 : 0,
-          borderLeftColor: priorityColor,
-          paddingLeft: item.status === "Pending" ? 8 : 12,
-        },
-      ]}
-    >
-      <View style={styles.taskItemContent}>
-        <Ionicons name="checkbox-outline" size={22 * scale} color={priorityColor} />
-        <View style={styles.taskTextContainer}>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>{item.task}</Text>
-          <View style={styles.taskFooter}>
-            <Text style={[styles.cardSub, { color: theme.secondary }]}>
-             {getRelativeDate(item.createdAt)}
-            </Text>
-            <View style={[styles.priorityBadge, { backgroundColor: priorityColor }]}>
-              <Text style={styles.priorityBadgeText}>{item.status.toUpperCase()}</Text>
-            </View>
-          </View>
+    <View style={[styles.miniCard, { backgroundColor: theme.lightCard }]}>
+      <View style={styles.taskItemDetails}>
+        {/* Icon */}
+        <Ionicons
+          name="checkbox-outline"
+          size={22 * scale}
+          color={statusColor}
+        />
+
+        {/* TEXT CONTAINER (same concept as meetings) */}
+        <View style={styles.taskTextBox}>
+          <Text
+            style={[styles.cardTitle, { color: theme.text }]}
+            numberOfLines={1}
+          >
+            {item.task}
+          </Text>
+
+          <Text
+            style={[styles.cardSub, { color: theme.secondary, marginTop: 2 }]}
+          >
+            {getRelativeDate(item.createdAt)}
+          </Text>
         </View>
+      </View>
+
+      {/* STATUS BADGE — like meetings */}
+      <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+        <Text style={styles.statusBadgeText}>
+          {item.status.toUpperCase()}
+        </Text>
       </View>
     </View>
   );
 };
+
+
 
 // ---------------- Dashboard Screen ----------------
 export default function DashboardScreen() {
@@ -134,6 +149,30 @@ export default function DashboardScreen() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const newsScrollRef = useRef<ScrollView>(null);
   const [selectedNews, setSelectedNews] = useState<any>(null);
+  const [showMeetingDropdown, setShowMeetingDropdown] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ x: 0, y: 0 });
+  const filterIconRef = useRef<View>(null);
+  const [dropdownY, setDropdownY] = useState(0);
+  const [teamList, setTeamList] = useState<string[]>([]);
+  const [selectedTeamFilter, setSelectedTeamFilter] = useState<string | null>(null);
+  const [meetingSort, setMeetingSort] = useState<"earliest" | "latest">("earliest");
+  const [showTeamOptions, setShowTeamOptions] = useState(false);
+  // FILTER MEETINGS BASED ON TEAM
+// FINAL COMPUTED LIST (SORT + FILTER TOGETHER)
+const finalMeetings = [...meetings]
+  .filter((m) => {
+    if (!selectedTeamFilter) return true;
+    return m.teamName === selectedTeamFilter;
+  })
+  .sort((a, b) => {
+    if (meetingSort === "earliest") return a.createdAt - b.createdAt;
+    if (meetingSort === "latest") return b.createdAt - a.createdAt;
+    if (meetingSort === "teamAsc") return a.teamName.localeCompare(b.teamName);
+    if (meetingSort === "teamDesc") return b.teamName.localeCompare(a.teamName);
+    return 0;
+  });
+
+
 
   // ---------------- PH TIME ----------------
   const getPhilippineTime = () => {
@@ -210,36 +249,71 @@ useEffect(() => {
 
       // Meetings (last 3 days)
       const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
-      const meetingsRaw = Object.entries(data.meetings || {})
-        .map(([mid, m]: any) => ({
-          id: mid,
-          ...m,
-          teamId,
-          teamName: data.name,
-        }))
-        .filter((m) => (m.createdAt || 0) >= threeDaysAgo);
+const meetingsRaw = Object.entries(data.meetings || {}).map(([mid, m]: any) => ({
+  id: mid,
+  ...m,
+  teamId,
+  teamName: data.name,
+}));
+
 
       userMeetings.push(...meetingsRaw);
+
     });
 
-    // Sort meetings by createdAt
-    userMeetings.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+if (meetingSort === "earliest") {
+  userMeetings.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+} else if (meetingSort === "latest") {
+  userMeetings.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+} else if (meetingSort === "teamAsc") {
+  userMeetings.sort((a, b) => a.teamName.localeCompare(b.teamName));
+} else if (meetingSort === "teamDesc") {
+  userMeetings.sort((a, b) => b.teamName.localeCompare(a.teamName));
+}
+
 
     setTasks(userTasks);
     setMeetings(userMeetings);
+
+    // Collect unique team names for filter
+const teamsForFilter = new Set<string>();
+Object.entries(teamsData).forEach(([teamId, data]: any) => {
+  if (data.members && data.members[userId]) {
+    teamsForFilter.add(data.name);
+  }
+});
+setTeamList(Array.from(teamsForFilter));
+
   });
 
   return () => unsubscribe(); // cleanup listener on unmount
-}, [currentUser]);
+}, [currentUser, meetingSort]);
 
 
 
 
   // ---------------- NEWS DATA ----------------
   const newsData = [
-    { id: "1", title: "AI Integration Now Live", text: "Gemini AI now powers meeting transcriptions and summaries." },
-    { id: "2", title: "New Teams Feature", text: "Organize recaps by project or department using the Teams tab." },
-    { id: "3", title: "Productivity Tips", text: "Boost workflow with daily summaries and smart recommendations." },
+  {
+    id: "1",
+    title: "AI Meeting Transcription Launched",
+    text: "ReCap AI now uses Whisper Large-V3 Model to automatically transcribe meetings with high accuracy. Your recordings are instantly converted to text, making documentation faster and more reliable."
+  },
+  {
+    id: "2",
+    title: "Smart Summaries Powered by GPT-4",
+    text: "Summaries of your meetings are now generated using GPT-4 model, providing clear, concise insights. The system highlights key points and action items in seconds."
+  },
+  {
+    id: "3",
+    title: "Automated Task Extraction",
+    text: "Tasks assigned during meetings are now automatically recognized and categorized. ReCap AI identifies members mentioned and syncs tasks to their dashboards in real time."
+  },
+  {
+    id: "4",
+    title: "Teams Feature Upgraded",
+    text: "Create or join teams with a generated code. All summaries, tasks, and recordings are organized by team to enhance collaboration and transparency."
+  },
   ];
 
   // ---------------- HEADER ----------------
@@ -259,7 +333,7 @@ useEffect(() => {
           <Text style={styles.headerGreeting}>
             Good {timeOfDay}, {displayFirstName}!
           </Text>
-          <Text style={styles.headerSubtitle}>Welcome to ReCap</Text>
+          <Text style={styles.headerSubtitle}>Streamline your day with smart summaries and tasks.</Text>
         </View>
         <Image source={LOGO_SOURCE} style={styles.headerLogo} resizeMode="contain" />
       </View>
@@ -292,14 +366,16 @@ useEffect(() => {
           <Text style={{ color: theme.text }}>Loading...</Text>
         </View>
       ) : (
-        <ScrollView
-          style={[styles.container, { backgroundColor: theme.bg }]}
-          contentContainerStyle={{ paddingBottom: 30 * verticalScale }}
-        >
+        <ScrollView style={[styles.container, { backgroundColor: theme.bg }]}
+        contentContainerStyle={{ paddingBottom: 30 * verticalScale,
+  }}
+  showsVerticalScrollIndicator={false}
+>
+
           <DashboardHeader />
 
           {/* News */}
-          <Text style={[styles.sectionTitle, { color: theme.blue }]}>News Updates</Text>
+          <Text style={[styles.sectionTitle, { color: theme.blue }]}>New Updates</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} ref={newsScrollRef} style={{ marginVertical: 10 * verticalScale }}>
             {newsData.map((news) => (
               <TouchableOpacity key={news.id} onPress={() => setSelectedNews(news)} activeOpacity={0.8}>
@@ -321,15 +397,170 @@ useEffect(() => {
             ))
           )}
 
-          {/* Meetings */}
-          <Text style={[styles.sectionTitle, { color: theme.blue, marginTop: 20 }]}>Meetings</Text>
-          {meetings.length === 0 ? (
-            <Text style={{ color: theme.secondary, marginBottom: 10 }}>No meetings yet.</Text>
-          ) : (
-            meetings.map((meet) => (
-              <MeetingItem key={`${meet.teamId}_${meet.id}`} item={meet} theme={theme} />
-            ))
-          )}
+<View
+  style={{
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 10,
+  }}
+>
+  <Text style={[styles.sectionTitle, { color: theme.blue, marginTop: 0 }]}>
+    Meetings
+  </Text>
+
+  <TouchableOpacity
+    ref={filterIconRef}
+    onPress={() => {
+      filterIconRef.current?.measure((fx, fy, width, height, px, py) => {
+        setDropdownY(py + height + 8); // appear directly below the icon
+      });
+      setShowMeetingDropdown(true);
+    }}
+  >
+    <Ionicons name="funnel-outline" size={22} color={theme.text} />
+  </TouchableOpacity>
+</View>
+
+
+{/* FLOATING DROPDOWN FILTER MODAL */}
+{showMeetingDropdown && (
+  <Modal transparent visible animationType="fade">
+    <TouchableOpacity
+      style={{
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.35)",  // dim background
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+      activeOpacity={1}
+      onPress={() => {
+        setShowMeetingDropdown(false);
+        setShowTeamOptions(false);
+      }}
+    >
+      <View
+        style={{
+          width: width * 0.82,
+          backgroundColor: theme.card,
+          borderRadius: 16,
+          paddingVertical: 12,
+          maxHeight: height * 0.55,
+
+          // floating effect
+          elevation: 12,
+          shadowColor: "#000",
+          shadowOpacity: 0.25,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 },
+        }}
+      >
+        {/* TITLE */}
+        <Text
+          style={{
+            color: theme.text,
+            fontSize: 16 * scale,
+            fontWeight: "700",
+            marginBottom: 8,
+            textAlign: "center",
+          }}
+        >
+          Meeting Filters
+        </Text>
+
+        {/* Ascending */}
+        <TouchableOpacity
+          onPress={() => {
+            setMeetingSort("earliest");
+            setShowMeetingDropdown(false);
+          }}
+        >
+          <Text style={{ padding: 12, color: theme.text, fontSize: 14 * scale }}>
+            Ascending (Earliest)
+          </Text>
+        </TouchableOpacity>
+
+        {/* Descending */}
+        <TouchableOpacity
+          onPress={() => {
+            setMeetingSort("latest");
+            setShowMeetingDropdown(false);
+          }}
+        >
+          <Text style={{ padding: 12, color: theme.text, fontSize: 14 * scale }}>
+            Descending (Latest)
+          </Text>
+        </TouchableOpacity>
+
+        {/* Divider */}
+        <View
+          style={{
+            height: 1,
+            backgroundColor: theme.secondary + "33",
+            marginVertical: 8,
+          }}
+        />
+
+        {/* Toggle Team Filter */}
+        <TouchableOpacity onPress={() => setShowTeamOptions(!showTeamOptions)}>
+          <Text
+            style={{
+              padding: 12,
+              color: theme.text,
+              fontSize: 14 * scale,
+              fontWeight: "600",
+            }}
+          >
+            Filter by Team  ▾
+          </Text>
+        </TouchableOpacity>
+
+        {/* TEAM LIST WITH SCROLL */}
+        {showTeamOptions && (
+          <ScrollView style={{ maxHeight: 200 }}>
+            {teamList.map((teamName, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => {
+                  setSelectedTeamFilter(teamName);
+                  setShowMeetingDropdown(false);
+                  setShowTeamOptions(false);
+                }}
+              >
+                <Text
+                  style={{
+                    padding: 12,
+                    color: theme.text,
+                    fontSize: 14 * scale,
+                  }}
+                >
+                  {teamName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </TouchableOpacity>
+  </Modal>
+)}
+
+
+{finalMeetings.length === 0 ? (
+  <Text style={{ color: theme.secondary, marginBottom: 10 }}>
+    No meetings found.
+  </Text>
+) : (
+  finalMeetings.map((meeting) => (
+    <MeetingItem
+      key={`${meeting.teamId}_${meeting.id}`}
+      item={meeting}
+      theme={theme}
+    />
+  ))
+)}
+
 
           {/* Modal */}
           <Modal visible={!!selectedNews} transparent animationType="fade" onRequestClose={() => setSelectedNews(null)}>
@@ -352,33 +583,37 @@ useEffect(() => {
 // ---------------- STYLES ----------------
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 16 * scale },
-  headerContainer: {
-    borderRadius: 12,
-    paddingVertical: 35 * verticalScale,
-    paddingHorizontal: 20 * scale,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20 * verticalScale,
-    marginTop: 20 * verticalScale,
-  },
+  container: { flex: 1, paddingHorizontal: 16 * scale, },
+headerContainer: {
+  borderRadius: 12,
+  paddingVertical: 35 * verticalScale,
+  paddingHorizontal: 20 * scale,
+  flexDirection: "row",
+  alignItems: "center",
+  marginBottom: 20 * verticalScale,
+  marginTop: 20 * verticalScale,
+  backgroundColor: "transparent",
+},
+
   headerTextBox: { flex: 1 },
-  headerGreeting: { color: "#fff", fontSize: 22 * scale, fontWeight: "700" },
-  headerSubtitle: { color: "#E3F2FD", fontSize: 14 * scale, marginTop: 4 },
-  headerLogo: { width: 110 * scale, height: 70 * scale },
+  headerGreeting: {color: "#fff", fontSize: 22 * scale, fontWeight: "700", marginBottom: 4 },
+  headerSubtitle: {color: "#EAF4FF", fontSize: 13 * scale, opacity: 0.9 },
+  headerLogo: { width: 110 * scale, height: 80 * scale, opacity: 0.92 },
 
   newsCard: {
     width: width * 0.7,
+    height: 100 * verticalScale, 
     marginRight: 10 * scale,
     borderRadius: 10,
     padding: 12 * scale,
     shadowColor: "#000",
+    justifyContent: "flex-start",
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3,
   },
   newsTitle: { fontSize: 15 * scale, fontWeight: "700", marginBottom: 4 },
-  newsText: { fontSize: 13 * scale },
+  newsText: { fontSize: 13 * scale, marginTop: 2 * scale, lineHeight: 16 * scale},
   sectionTitle: { fontSize: 18 * scale, fontWeight: "700", marginBottom: 10 * verticalScale, marginTop: 15 * verticalScale },
 
   miniCard: {
@@ -408,4 +643,26 @@ const styles = StyleSheet.create({
   modalCloseButton: { position: "absolute", top: 10 * scale, right: 10 * scale, zIndex: 1 },
   modalTitle: { fontSize: 18 * scale, fontWeight: "700", marginBottom: 10 * verticalScale, paddingTop: 25 * verticalScale },
   modalText: { fontSize: 14 * scale, lineHeight: 20 * verticalScale },
+  taskItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  taskText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  taskItemDetails: {
+  flexDirection: "row",
+  alignItems: "center",
+  flexShrink: 1,
+},
+
+taskTextBox: {
+  marginLeft: 10 * scale,
+  flexShrink: 1,
+},
+
 });
+
+

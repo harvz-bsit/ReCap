@@ -266,11 +266,8 @@ export default function TeamsScreen() {
     // Convert meetings object to array and count upcoming ones
     const meetingArray = Object.values(meetings) as any[];
     const now = new Date();
-    const upcomingMeetingsCount = meetingArray.filter(m => {
-        // Assuming m.date is 'YYYY-MM-DD' and m.time is 'HH:MM'
-        if (!m.date || !m.time) return false;
-        return new Date(`${m.date}T${m.time}:00`) >= now;
-    }).length;
+    const meetingsCount = meetingArray.length;
+
 
 
     return (
@@ -331,10 +328,11 @@ export default function TeamsScreen() {
 
           {/* Upcoming Meetings */}
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="calendar" size={16} color={upcomingMeetingsCount > 0 ? theme.blue : theme.secondary} />
-            <Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
-              {upcomingMeetingsCount} {upcomingMeetingsCount === 1 ? "upcoming meeting" : "upcoming meetings"}
-            </Text>
+<Ionicons name="calendar" size={16} color={meetingsCount > 0 ? theme.blue : theme.secondary} />
+<Text style={{ color: theme.secondary, fontSize: 12, marginLeft: 4 }}>
+  {meetingsCount} {meetingsCount === 1 ? "meeting" : "meetings"}
+</Text>
+
           </View>
         </View>
       </TouchableOpacity>
