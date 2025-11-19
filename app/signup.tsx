@@ -124,11 +124,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   setLoading(true);
   try {
     const trimmedEmail = email.trim().toLowerCase();
-<<<<<<< HEAD
     if (!trimmedEmail || !password || !confirmPassword || !firstName || !lastName ) {
-=======
-    if (!trimmedEmail || !password || !confirmPassword || !firstName || !lastName || !nickname) {
->>>>>>> 0bed162073361c1a2b1276d8763082f99b39836a
       return Alert.alert("Error", "Please fill all fields");
     }
     if (!passwordRegex.test(password)) {
@@ -155,10 +151,6 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
       password: hashedPassword,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-<<<<<<< HEAD
-=======
-      nickname: nickname.trim(),
->>>>>>> 0bed162073361c1a2b1276d8763082f99b39836a
       workType,
       department: "IT",
     });
