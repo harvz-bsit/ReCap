@@ -136,6 +136,16 @@ export default function TeamDetailsScreen() {
     return members;
   };
 
+  useEffect(() => {
+  // Reset all modals when switching to a different team
+  setShowMembers(false);
+  setShowRemoveConfirm(false);
+  setShowLeaveConfirm(false);
+  setShowMeetingModal(false);
+  setSelectedMeeting(null);
+}, [id]);
+
+
   // Listen to team updates
   useEffect(() => {
     if (!id) return;
@@ -170,6 +180,7 @@ export default function TeamDetailsScreen() {
         id: mid,
         ...m,
       }));
+
 
       // Members
       const membersArray = await fetchMemberProfiles(data.members);

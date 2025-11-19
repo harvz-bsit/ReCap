@@ -7,7 +7,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Image,
   KeyboardAvoidingView,
   Modal,
   ScrollView,
@@ -16,12 +15,11 @@ import {
   TextInput,
   TouchableOpacity,
   useColorScheme,
-  View,
+  View
 } from "react-native";
 import { db } from "../firebase/firebaseConfig";
 
 const { width } = Dimensions.get("window");
-const LOGO = require("../app/images/recap-logo.png");
 const WORK_TYPES = ["Professional", "Student", "Business Owner", "Other"];
 
 export default function SignupScreen() {
@@ -180,9 +178,6 @@ export default function SignupScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.bg }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.logoWrapper}>
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-        </View>
 
         <View style={[styles.card, { backgroundColor: theme.card }]}>
           <Text style={[styles.title, { color: theme.text }]}>Sign Up</Text>
