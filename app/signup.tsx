@@ -1,5 +1,4 @@
 import { Picker } from "@react-native-picker/picker";
-import bcrypt from "bcryptjs";
 import { useRouter } from "expo-router";
 import { equalTo, get, orderByChild, push, query, ref, set } from "firebase/database";
 import React, { useRef, useState } from "react";
@@ -17,15 +16,21 @@ import {
   useColorScheme,
   View
 } from "react-native";
+import bcrypt from "react-native-bcrypt";
 import { db } from "../firebase/firebaseConfig";
+import { Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
-const WORK_TYPES = ["Professional", "Student", "Business Owner", "Other"];
+const WORK_TYPES = ["Professional", "Student", "Business Owner", "Freelancer", "Other"];
 
 export default function SignupScreen() {
   const router = useRouter();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
+
+const [showPassword, setShowPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
 
   // ----------------- FORM STATE -----------------
   const [email, setEmail] = useState("");
@@ -33,7 +38,6 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [nickname, setNickname] = useState("");
   const [workType, setWorkType] = useState("Professional");
   const [loading, setLoading] = useState(false);
 
@@ -117,50 +121,52 @@ export default function SignupScreen() {
 
   // ----------------- COMPLETE SIGNUP -----------------
   const completeSignup = async () => {
-    setLoading(true);
-    try {
-      const trimmedEmail = email.trim().toLowerCase();
-      if (!trimmedEmail || !password || !confirmPassword || !firstName || !lastName || !nickname) {
-        return Alert.alert("Error", "Please fill all fields");
-      }
-      if (!passwordRegex.test(password)) {
-        return Alert.alert(
-          "Weak Password",
-          "Password must be at least 8 characters, include 1 uppercase, 1 number, and 1 symbol."
-        );
-      }
-      if (password !== confirmPassword) return Alert.alert("Error", "Passwords do not match");
-
-      const emailQuery = query(ref(db, "users"), orderByChild("email"), equalTo(trimmedEmail));
-      const snap = await get(emailQuery);
-      if (snap.exists()) return Alert.alert("Error", "Email already exists");
-
-      const uid = push(ref(db, "users")).key as string;
-      const hashedPassword = bcrypt.hashSync(password, 10);
-
-      await set(ref(db, `users/${uid}`), {
-        id: uid,
-        email: trimmedEmail,
-        password: hashedPassword,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        nickname: nickname.trim(),
-        workType,
-        department: "IT",
-      });
-
-      Alert.alert("Success", "Account created successfully!");
-      router.replace("/");
-    } catch (err: any) {
-      Alert.alert("Error", err.message || "Something went wrong");
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password || !confirmPassword || !firstName || !lastName ) {
+      return Alert.alert("Error", "Please fill all fields");
     }
-  };
+    if (!passwordRegex.test(password)) {
+      return Alert.alert(
+        "Weak Password",
+        "Password must be at least 8 characters, include 1 uppercase, 1 number, and 1 symbol."
+      );
+    }
+    if (password !== confirmPassword) return Alert.alert("Error", "Passwords do not match");
+
+    const emailQuery = query(ref(db, "users"), orderByChild("email"), equalTo(trimmedEmail));
+    const snap = await get(emailQuery);
+    if (snap.exists()) return Alert.alert("Error", "Email already exists");
+
+    const uid = push(ref(db, "users")).key as string;
+
+    // --------- HASH PASSWORD CLIENT-SIDE ---------
+    const salt = bcrypt.genSaltSync(10); // generate salt
+    const hashedPassword = bcrypt.hashSync(password, salt);
+
+    await set(ref(db, `users/${uid}`), {
+      id: uid,
+      email: trimmedEmail,
+      password: hashedPassword,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      workType,
+      department: "IT",
+    });
+
+    Alert.alert("Success", "Account created successfully!");
+    router.replace("/");
+  } catch (err: any) {
+    Alert.alert("Error", err.message || "Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ----------------- INITIAL SIGNUP BUTTON -----------------
   const handleSignup = async () => {
-    if (!email || !password || !confirmPassword || !firstName || !lastName || !nickname) {
+    if (!email || !password || !confirmPassword || !firstName || !lastName ) {
       return Alert.alert("Error", "Please fill all fields");
     }
     if (!passwordRegex.test(password)) {
@@ -186,13 +192,54 @@ export default function SignupScreen() {
 
           <TextInput placeholder="Last Name" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} value={lastName} onChangeText={setLastName} />
 
-          <TextInput placeholder="Nickname" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} value={nickname} onChangeText={setNickname} />
-
           <TextInput placeholder="Email" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
-          <TextInput placeholder="Password" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} secureTextEntry value={password} onChangeText={setPassword} onBlur={handlePasswordBlur} />
+<View style={{ position: "relative" }}>
+  <TextInput
+    placeholder="Password"
+    placeholderTextColor={isDark ? "#888" : "#aaa"}
+    style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, paddingRight: 45 }]}
+    secureTextEntry={!showPassword}
+    value={password}
+    onChangeText={setPassword}
+    onBlur={handlePasswordBlur}
+  />
 
-          <TextInput placeholder="Confirm Password" placeholderTextColor={isDark ? "#888" : "#aaa"} style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]} secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+  <TouchableOpacity
+    onPress={() => setShowPassword(!showPassword)}
+    style={{ position: "absolute", right: 12, top: 18 }}
+  >
+    <Ionicons
+      name={showPassword ? "eye-off" : "eye"}
+      size={22}
+      color={theme.text}
+    />
+  </TouchableOpacity>
+</View>
+
+
+<View style={{ position: "relative" }}>
+  <TextInput
+    placeholder="Confirm Password"
+    placeholderTextColor={isDark ? "#888" : "#aaa"}
+    style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, paddingRight: 45 }]}
+    secureTextEntry={!showConfirmPassword}
+    value={confirmPassword}
+    onChangeText={setConfirmPassword}
+  />
+
+  <TouchableOpacity
+    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+    style={{ position: "absolute", right: 12, top: 18 }}
+  >
+    <Ionicons
+      name={showConfirmPassword ? "eye-off" : "eye"}
+      size={22}
+      color={theme.text}
+    />
+  </TouchableOpacity>
+</View>
+
 
           <View style={[styles.pickerContainer, { backgroundColor: theme.inputBg }]}>
             <Picker selectedValue={workType} onValueChange={(value) => setWorkType(value)} style={{ color: theme.text }}>
@@ -205,6 +252,10 @@ export default function SignupScreen() {
           <TouchableOpacity style={[styles.button, { backgroundColor: theme.button }]} onPress={handleSignup} disabled={loading || otpLoading}>
             <Text style={styles.buttonText}>{otpLoading ? "Sending OTP..." : loading ? "Creating..." : "Sign Up"}</Text>
           </TouchableOpacity>
+
+          <Text style={{ color: theme.text, fontSize: 12, textAlign: "center", marginTop: 10 }}>
+By signing up, you allow ReCap AI to collect and use your information in accordance with the data you provide.</Text>
+
 
           <TouchableOpacity onPress={() => router.push("/")} style={{ marginTop: 16 }}>
             <Text style={{ color: theme.text, textAlign: "center" }}>

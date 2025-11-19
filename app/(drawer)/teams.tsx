@@ -169,7 +169,7 @@ export default function TeamsScreen() {
       setShowCreateModal(false);
       setAddModalVisible(false);
 
-      Alert.alert("Team Created", `Your team is live!\nJoin Code: ${joinCode}`);
+      Alert.alert("Team Created", `Join Code: ${joinCode}`);
 
       router.push(`./teams/${newRef.key}`);
     } catch (err) {
