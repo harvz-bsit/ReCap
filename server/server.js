@@ -40,52 +40,23 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     const rawText = transcription.text;
     console.log("🎙️ Transcription done");
 
-    // Step 2: Generate Minutes + Tasks
+    // Step 2: Generate structured summary + tasks
     const prompt = `
-        You are an expert corporate meeting minutes generator.
+      You are a meeting summarizer.
+      From the transcript below, produce a minutes of the meeting and a list of tasks.
 
-        From the transcript below, produce a structured **Minutes of the Meeting (MoM)** but store it under the JSON key "summary".
+      Respond ONLY in valid JSON in this format:
 
-        Respond ONLY in valid JSON in this exact format:
+      {
+        "summary": "Meeting Minutes: ...",
+        "tasks": [
+          { "text": "Task description", "assigneeName": "Name or null" }
+        ]
+      }
 
-        {
-          "summary": {
-            "title": "Minutes of the Meeting",
-            "date": "If date mentioned, else null",
-            "participants": ["List of names if mentioned, else empty array"],
-            "agenda": ["Agenda item 1", "Agenda item 2"],
-            "discussion": [
-              "Clear bullet-style discussion points summarizing what was talked about."
-            ],
-            "decisions": [
-              "Final decisions or agreements made during the meeting."
-            ],
-            "actionItems": [
-              "Action items mentioned explicitly during the meeting."
-            ]
-          },
-          "tasks": [
-            { "text": "Task description", "assigneeName": "Name or null" }
-          ]
-        }
-
-        === GUIDELINES ===
-        - "summary" MUST contain the full Minutes of the Meeting, not a generic summary.
-        - Extract agenda items if mentioned; otherwise infer logically.
-        - List participants only when clearly stated.
-        - Keep discussion points concise and meaningful.
-        - Decisions must only be final agreements.
-        - Action items are commitments or responsibilities.
-        - Tasks must be actionable and specific.
-        - assigneeName must be the actual person mentioned; otherwise null.
-        - DO NOT fabricate details that are not in the transcript.
-        - DO NOT copy transcript text verbatim.
-        - Output valid JSON only.
-
-        Transcript:
-        ${rawText}
-      `;
-
+      Transcript:
+      ${rawText}
+    `;
 
     const summaryResponse = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -101,8 +72,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       console.warn("⚠️ GPT fallback: non-JSON response, parsing manually");
 
       const text = summaryResponse.choices[0].message?.content || "";
-
-      const [minutesPart, taskPart] = text.split(/Tasks:/i);
+      const [summaryPart, taskPart] = text.split(/Tasks:/i);
       const tasks = (taskPart || "")
         .split("\n")
         .map((line) => line.trim())
@@ -115,28 +85,28 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
         });
 
       structuredOutput = {
-        minutes: minutesPart?.trim() || "No minutes generated.",
+        summary: summaryPart?.trim() || "No summary generated.",
         tasks,
       };
     }
 
     console.log("✅ Structured Output:", structuredOutput);
 
-    // Combined output for UI display
-    const combinedDisplay = `${structuredOutput.minutes}\n\nTasks:\n${structuredOutput.tasks
+    // Combine text for UI display (no UI layout changes)
+    const combinedDisplay = `${structuredOutput.summary}\n\nTasks:\n${structuredOutput.tasks
       .map((t) => `- ${t.assigneeName ? t.assigneeName + ": " : ""}${t.text}`)
       .join("\n")}`;
 
     res.json({
       transcription: rawText,
-      minutes: structuredOutput.minutes,
+      summary: structuredOutput.summary,
       tasks: structuredOutput.tasks,
       combinedDisplay,
     });
   } catch (error) {
-    console.error("❌ Whisper+Minutes error:", error);
+    console.error("❌ Whisper+Summary error:", error);
     res.status(500).json({
-      error: "Transcription or minutes generation failed",
+      error: "Transcription or summarization failed",
       details: JSON.stringify(error, Object.getOwnPropertyNames(error)),
     });
   }
