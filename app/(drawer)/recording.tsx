@@ -252,7 +252,6 @@ if (teamData.creatorUID === currentUserUid) {
       const response = await fetch("https://recap-buz6.onrender.com/transcribe", {
         method: "POST",
         body: formData,
-        headers: { "Content-Type": "multipart/form-data" },
       });
 
       const result = await response.json();

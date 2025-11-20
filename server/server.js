@@ -43,7 +43,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     // Step 2: Generate structured summary + tasks
     const prompt = `
       You are a meeting summarizer.
-      From the transcript below, produce a minutes of the meeting and a list of tasks.
+      From the transcript below, produce a short meeting minutes summary and a list of tasks.
 
       Respond ONLY in valid JSON in this format:
 
@@ -53,6 +53,8 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
           { "text": "Task description", "assigneeName": "Name or null" }
         ]
       }
+
+      === GUIDELINES === - "summary" MUST contain the full Minutes of the Meeting, not a generic summary. - Extract agenda items if mentioned; otherwise infer logically. - List participants only when clearly stated. - Keep discussion points concise and meaningful. - Decisions must only be final agreements. - Action items are commitments or responsibilities. - Tasks must be actionable and specific. - assigneeName must be the actual person mentioned; otherwise null. - DO NOT fabricate details that are not in the transcript. - DO NOT copy transcript text verbatim. - Output valid JSON only.
 
       Transcript:
       ${rawText}
